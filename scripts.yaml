@@ -1,0 +1,117 @@
+hsbo_log_event2:
+  alias: HSBO Logging Event
+  fields:
+    level:
+      description: Log level (debug, info, warning, error)
+      example: info
+    message:
+      description: Message to log
+      example: Test message
+    component:
+      description: Component name
+      example: Battery Management
+  sequence:
+  - variables:
+      logging_enabled: '{{ states(''input_boolean.hsbo_logging_enabled'') == ''on''
+        }}'
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ logging_enabled }}'
+      sequence:
+      - data:
+          entity_id: notify.file_hsbo_system_log
+          message: '{"{{ now().strftime(''%Y-%m-%d %H:%M:%S'') }}", "{{ level | upper
+            }}", "{{ component }}", "{{ message }}"}'
+        action: notify.send_message
+    default:
+    - data:
+        message: '[{{ component }}] {{ message }}'
+        level: '{{ level }}'
+        logger: hsbo
+      action: system_log.write
+  description: ''
+set_export_limit:
+  alias: Sæt batteri-arbejdstilstand
+  mode: single
+  fields:
+    power:
+      name: Effekt-parameter
+      description: Brug 0 for normal selvforbrug – alt andet for fuld eksport
+      example: 100
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: box
+  sequence:
+  - choose:
+    - conditions: '{{ power | int > 0 }}'
+      sequence:
+      - service: select.select_option
+        target:
+          entity_id: select.batteries_working_mode
+        data:
+          option: fully_fed_to_grid
+    - conditions: '{{ power | int == 0 }}'
+      sequence:
+      - service: select.select_option
+        target:
+          entity_id: select.batteries_working_mode
+        data:
+          option: maximise_self_consumption
+    default: []
+start_forcible_discharge:
+  alias: 'Batteri: Start tvangsladning → net-aflad'
+  mode: single
+  sequence:
+  - service: huawei_solar.set_maximum_feed_grid_power_percent
+    data:
+      device_id: a27b89407bbdf3e1b22612e06c361a74
+      power_percentage: 100
+  - service: huawei_solar.forcible_discharge
+    data_template:
+      device_id: a27b89407bbdf3e1b22612e06c361a74
+      power: '{{ states(''input_number.discharge_power_w'') | int }}
+
+        '
+      duration: '{% set s = states(''input_datetime.discharge_start_time'') %} {%
+        set e = states(''input_datetime.discharge_end_time'')   %} {% set sd = strptime(s,
+        ''%H:%M:%S'') %} {% set ed = strptime(e, ''%H:%M:%S'') %} {{ ((ed - sd).seconds
+        / 60) | int }}
+
+        '
+huawei_force_charge_to_target_soc_param_migrated:
+  sequence:
+  - condition: state
+    entity_id: input_boolean.huawei_force_control
+    state: 'on'
+  - data:
+      device_id: '{{ states(''input_text.huawei_battery_id'') }}'
+      target_soc: '{{ (target_soc | int(80)) }}'
+      power: '{{ (power | int(5000)) }}'
+    action: huawei_solar.forcible_charge_soc
+  alias: Huawei - force charge to target SoC (param)_Migrated
+  mode: restart
+  fields:
+    target_soc:
+      description: Target SoC percent (integer)
+      example: 80
+    power:
+      description: Charge with amount of power (Watt)
+      example: 2000
+  description: ''
+huawei_force_discharge_to_target_soc_migrated:
+  sequence:
+  - condition: state
+    entity_id: input_boolean.huawei_force_control
+    state: 'on'
+  - data:
+      device_id: '{{ states(''input_text.huawei_battery_id'') }}'
+      power: '5000'
+      target_soc: '{{states(''input_number.export_min_soc'') | int}}'
+    action: huawei_solar.forcible_discharge_soc
+  alias: Huawei - force discharge to target SoC_Migrated
+  mode: restart
+  description: ''

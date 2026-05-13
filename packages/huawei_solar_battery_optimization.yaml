@@ -1,0 +1,2293 @@
+# Huawei Solar Battery Optimization
+# huawei_solar_battery_optimization.yaml
+# Place this file in your packages directory (usually /config/packages/)
+# See Home Assistant Packages documentation for further details on how to use this
+# Packages in Home Assistant: https://www.home-assistant.io/docs/configuration/packages/
+# This packages is created by Heino Skov. I do not provide any support on this but its free to use and
+# edit to your needs.
+
+# This package provides a set of scripts and automations to optimize the use of a Huawei solar battery system.
+# The scripts and automations in this package is setup for a 10kWh inverter and 10kW battery from Huawei.
+# It aims to maximize self-consumption, optimize charging/discharging of Huawei Battery based on electricity prices,
+# and manage grid export based on spot prices.
+
+# --------------------------------------------------------------------------------------
+# Brief explanation
+# Daily processes:
+# The daily optimization runs at 6:00 AM, triggering energy threshold calculations, hourly data analysis, and
+# summary generation.
+# At 6:05 AM, the system implements the daily optimization, initially setting the working mode to TOU with
+# disabled battery, and potentially scheduling a mode change.
+# Throughout the day, the system checks every 5 minutes if it's time to change the mode to Maximize Self Consumption.
+# At 5:00 PM, the system switches to an appropriate mode based on the month.
+# At 9:00 PM, the system calculates the charging strategy for the next day, setting either TOU or Maximise Self
+# Consumption for the coming night
+
+# Monthly process:
+# On the 1st of each month, the system checks and sets the appropriate working mode based on the season.
+
+# Continuous processes:
+# The system manages inverter export based on spot prices, triggered by price changes or hourly checks.
+
+# Available scripts:
+# There is various scripts available for setting different working modes, managing grid export, and calculating
+# charging strategies.
+# Some of these are used in automations and some is there to use manually or for further automation improvements.
+# --------------------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------------------
+# Requirements to use below scripts / automations
+# Huawai Solar integration by wlcrs: https://github.com/wlcrs/huawei_solar
+# Solcast integration by oziee: https://github.com/BJReplay/ha-solcast-solar
+# Energi Data Service integration by MTrab: https://github.com/MTrab/energidataservice
+# Huawei Solar PEES package by JensenNick https://github.com/JensenNick/huawei_solar_pees (not required but nice addon to Huawei)
+# --------------------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------------------
+# A few input sensors may need to be adjusted:
+# sensor.solcast_pv_forecast_forecast_today (from Solcast integration)
+# sensor.solcast_pv_forecast_forecast_tomorrow (from Solcast integration)
+# sensor.energi_data_service_total_price (from Energi Data Service integration)
+# sensor.energi_data_service_spot_price (from Energi Data Service integration)
+# sensor.batteries_state_of_capacity (from Huawei Solar Integration)
+# sensor.inverter_active_power_control (from Huawei Solar Integration)
+# --------------------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------------------
+# Roadmap features:
+# 1. Adjustable AMP configuration for EV Charging (Wallbox Pulsar Plus) based on excessive PV production after house load
+# 2. Peak shaving / Capacity Control
+# --------------------------------------------------------------------------------------
+
+# Helpers to support the various scripts and automations
+input_number:
+  hsbo_energy_avg_price:
+    name: HSBO Energy Average Price
+    min: 0
+    max: 10
+    step: 0.01
+    unit_of_measurement: DKK/kWh
+  hsbo_energy_high_threshold:
+    name: HSBO Energy High Threshold
+    min: 0
+    max: 10
+    step: 0.01
+    unit_of_measurement: DKK/kWh
+  hsbo_energy_low_threshold:
+    name: HSBO Energy Low Threshold
+    min: 0
+    max: 10
+    step: 0.01
+    unit_of_measurement: DKK/kWh
+  hsbo_grid_selling:
+    name: HSBO Grid Selling
+    min: 0
+    max: 100
+    step: 0.01
+    unit_of_measurement: kWh
+  hsbo_battery_charging:
+    name: HSBO Battery Charging
+    min: 0
+    max: 10
+    step: 0.01
+    unit_of_measurement: kWh
+  hsbo_remaining_charge:
+    name: HSBO Remaining Charge
+    min: 0
+    max: 10
+    initial: 10
+    step: 0.01
+    unit_of_measurement: kWh
+    icon: mdi:battery-charging
+  hsbo_simulated_remaining_charge:
+    name: HSBO Simulated Remaining Charge
+    min: 0
+    max: 10
+    initial: 10
+    step: 0.01
+    unit_of_measurement: kWh
+    icon: mdi:battery-charging-outline
+  hsbo_charge_start_time:
+    name: HSBO Charge Start Time
+    min: 0
+    max: 23
+    step: 1
+    unit_of_measurement: hour
+    icon: mdi:clock-start
+  hsbo_solar_charging_capacity:
+    name: HSBO Solar Charging Capacity
+    min: 0
+    max: 100  # Increase this to a value that comfortably exceeds your maximum possible daily production
+    step: 0.01
+    unit_of_measurement: kWh
+  hsbo_required_grid_charging:
+    name: HSBO Required Grid Charging
+    min: 0
+    max: 10
+    step: 0.01
+    unit_of_measurement: kWh
+  hsbo_ac_charge_cutoff_soc:
+    name: HSBO AC Charge Cutoff SOC
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: '%'
+
+input_text:
+  hsbo_hourly_decision:
+    name: HSBO Hourly Decision
+  hsbo_recommendation_6:
+    name: HSBO Recommendation for 6:00
+  hsbo_recommendation_7:
+    name: HSBO Recommendation for 7:00
+  hsbo_recommendation_8:
+    name: HSBO Recommendation for 8:00
+  hsbo_recommendation_9:
+    name: HSBO Recommendation for 9:00
+  hsbo_recommendation_10:
+    name: HSBO Recommendation for 10:00
+  hsbo_recommendation_11:
+    name: HSBO Recommendation for 11:00
+  hsbo_recommendation_12:
+    name: HSBO Recommendation for 12:00
+  hsbo_recommendation_13:
+    name: HSBO Recommendation for 13:00
+  hsbo_recommendation_14:
+    name: HSBO Recommendation for 14:00
+  hsbo_recommendation_15:
+    name: HSBO Recommendation for 15:00
+  hsbo_recommendation_16:
+    name: HSBO Recommendation for 16:00
+  hsbo_recommended_working_mode:
+    name: HSBO Recommended Working Mode
+  hsbo_current_priority_mode:
+    name: HSBO Sensor for current priority mode
+
+input_datetime:
+  hsbo_battery_charge_datetime:
+    name: HSBO Battery Charge Date and Time
+    has_date: true
+    has_time: true
+
+# Binary Sensors
+binary_sensor:
+  - platform: template
+    sensors:
+      hsbo_negative_spot_price:
+        friendly_name: "HSBO Negative Spot Price"
+        unique_id: hsbo_negative_spot_price
+        value_template: >
+          {{ states(states('input_text.hsbo_energi_data_service_spot_price')) | float(0) < 0 }}
+        attribute_templates:
+          energi_data_service_price: "{{ states(states('input_text.hsbo_energi_data_service_spot_price')) }}"
+
+  - platform: template
+    sensors:
+      hsbo_ev_charging:
+        friendly_name: "HSBO EV Charging Status"
+        value_template: >-
+          {% set ev_status = states(states('input_text.hsbo_ev_charger_status')) | lower %}
+          {{ ev_status in ['charging'] }}
+
+# Scripts
+script:
+  hsbo_reset_power_entities:
+    alias: HSBO - Reset Power Entities
+    sequence:
+      - action: recorder.purge_entities
+        data:
+          entity_globs:
+            - sensor.hsbo_house_consumption_*_energy*
+            - sensor.hsbo_house_consumption_*_power_sensor
+            - sensor.hsbo_house_consumption_*_energy_average_3d
+            - sensor.hsbo_house_consumption_*_energy_average_7d
+            - sensor.hsbo_house_consumption_*_energy_average_14d
+          keep_days: 0
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_reset_power_entities"
+          message: "HSBO: Purged entities in Recorder"
+      - action: utility_meter.calibrate
+        metadata: {}
+        data:
+          value: "0"
+        target:
+          entity_id:
+            - sensor.hsbo_house_consumption_00_01_energy_meter
+            - sensor.hsbo_house_consumption_01_02_energy_meter
+            - sensor.hsbo_house_consumption_02_03_energy_meter
+            - sensor.hsbo_house_consumption_03_04_energy_meter
+            - sensor.hsbo_house_consumption_04_05_energy_meter
+            - sensor.hsbo_house_consumption_05_06_energy_meter
+            - sensor.hsbo_house_consumption_06_07_energy_meter
+            - sensor.hsbo_house_consumption_07_08_energy_meter
+            - sensor.hsbo_house_consumption_08_09_energy_meter
+            - sensor.hsbo_house_consumption_09_10_energy_meter
+            - sensor.hsbo_house_consumption_10_11_energy_meter
+            - sensor.hsbo_house_consumption_11_12_energy_meter
+            - sensor.hsbo_house_consumption_12_13_energy_meter
+            - sensor.hsbo_house_consumption_13_14_energy_meter
+            - sensor.hsbo_house_consumption_14_15_energy_meter
+            - sensor.hsbo_house_consumption_15_16_energy_meter
+            - sensor.hsbo_house_consumption_16_17_energy_meter
+            - sensor.hsbo_house_consumption_17_18_energy_meter
+            - sensor.hsbo_house_consumption_18_19_energy_meter
+            - sensor.hsbo_house_consumption_19_20_energy_meter
+            - sensor.hsbo_house_consumption_20_21_energy_meter
+            - sensor.hsbo_house_consumption_21_22_energy_meter
+            - sensor.hsbo_house_consumption_22_23_energy_meter
+            - sensor.hsbo_house_consumption_23_00_energy_meter
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_reset_power_entities"
+          message: "HSBO: Calibrated Power Utility Meters"
+
+  hsbo_calculate_energy_thresholds:
+    alias: "HSBO Calculate Energy Thresholds"
+    # This script calculates the average, high, and low energy price thresholds for the day.
+    # These thresholds are used to make decisions about when to charge the battery or sell to the grid.
+    sequence:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_energy_avg_price
+        data:
+          value: "{{ state_attr(states('input_text.hsbo_energi_data_service_total_price'), 'today_mean') | float(0) }}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_energy_high_threshold
+        data:
+          value: "{{ (state_attr(states('input_text.hsbo_energi_data_service_total_price'), 'today_max')['price'] | float(0) ) * 0.95}}"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_energy_low_threshold
+        data:
+          value: "{{ (state_attr(states('input_text.hsbo_energi_data_service_total_price'), 'today_min')['price'] | float(0) ) * 1.05}}"
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_calculate_energy_thresholds"
+          message: >
+            HSBO: Price thresholds,
+            High: {{ states('input_number.hsbo_energy_high_threshold') }} DKK/kWh, 
+            Low: {{ states('input_number.hsbo_energy_low_threshold') }} DKK/kWh, 
+            Average: {{ states('input_number.hsbo_energy_avg_price') }} DKK/kWh
+
+  hsbo_analyze_hourly_data:
+    alias: "HSBO Analyze Hourly Data"
+    # This script analyzes the hourly solar production forecast and electricity prices.
+    # It makes decisions about whether to charge the battery, sell to the grid, or use the energy
+    # for each hour of the day, and updates the relevant input numbers and texts.
+    sequence:
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_analyze_hourly_data"
+          message: "HSBO: Starting hourly data analysis"
+      - if: "{{ states('sensor.hsbo_consumption_prediction_confidence') | float(100) < 75 }}"
+        then:
+          - action: script.hsbo_log_event2
+            data:
+              level: "warning"
+              component: "hsbo_analyze_hourly_data"
+              message: "Low prediction confidence ({{ states('sensor.hsbo_consumption_prediction_confidence') }}%). Using fallback values."
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_analyze_hourly_data"
+          message: >
+            HSBO: Consumption prediction confidence: {{ states('sensor.hsbo_consumption_prediction_confidence') }}%, 
+            Morning peak: {{ states('sensor.hsbo_weighted_consumption_morning_peak') }} kWh, 
+            Evening peak: {{ states('sensor.hsbo_weighted_consumption_evening_peak') }} kWh
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_grid_selling
+        data:
+          value: 0
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_battery_charging
+        data:
+          value: 0
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_analyze_hourly_data"
+          message: >
+            HSBO: Battery status - SOC: {{ states(states('input_text.hsbo_batteries_state_of_capacity')) }}%, 
+            Actual remaining: {{ states('input_number.hsbo_remaining_charge') }} kWh, 
+            Max capacity: {{ states('input_number.hsbo_battery_max_capacity') }} kWh
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_remaining_charge
+        data:
+          value: >
+            {% set battery_capacity = states(states('input_text.hsbo_batteries_state_of_capacity')) | float(0) %}
+            {% set max_capacity = states('input_number.hsbo_battery_max_capacity') | float(0) %}
+            {% if battery_capacity != 'unknown' and battery_capacity != 'unavailable' %}
+              {{ ((100 - battery_capacity) / 100 * max_capacity) | round(2) }}
+            {% else %}
+              {{ max_capacity | round(2) }}
+            {% endif %}
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_simulated_remaining_charge
+        data:
+          value: "{{ states('input_number.hsbo_remaining_charge') }}"
+      - action: homeassistant.update_entity
+        target:
+          entity_id: input_number.hsbo_remaining_charge
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_analyze_hourly_data"
+          message: "HSBO: Actual remaining charge set to: {{ states('input_number.hsbo_remaining_charge') }} kWh (Battery at states(states('input_text.hsbo_batteries_state_of_capacity')) %)"
+      - repeat:
+          count: 11
+          sequence:
+            - variables:
+                current_hour: "{{ repeat.index + 5 }}"
+                max_charge_power: "{{ states(states('input_text.hsbo_batteries_maximum_charging_power')) | float(5000) }}"
+                solar_factor: "{{ states('input_number.hsbo_solar_production_factor') | float(0.9) }}"
+                hour_forecast: >
+                  {% set forecast = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_today'), 'detailedHourly') %}
+                  {{ forecast[current_hour].pv_estimate * solar_factor | float(0) if forecast != None else 0.0 }}
+                charging_amount: "{{ [hour_forecast, max_charge_power/1000, states('input_number.hsbo_simulated_remaining_charge') | float(0)] | min }}"
+            - action: script.hsbo_process_hourly_data
+              data:
+                hour: "{{ current_hour }}"
+                hour_forecast: "{{ hour_forecast }}"
+                charging_amount: "{{ charging_amount }}"  # Added this to pass through
+            - action: script.hsbo_update_hourly_recommendation
+              data:
+                hour: "{{ current_hour }}"
+                hour_forecast: "{{ hour_forecast }}"
+                charging_amount: "{{ charging_amount }}"  # Added this to pass through
+
+  hsbo_process_hourly_data:
+    alias: "HSBO Process Hourly Data"
+    # This script processes the data for a specific hour, determining whether to sell to the grid,
+    # charge the battery, or use the energy based on the current price and battery state.
+    sequence:
+      - variables:
+          hour_price: "{{ state_attr(states('input_text.hsbo_energi_data_service_total_price'), 'raw_today')[hour].price }}"
+          charging_amount: "{{ [hour_forecast, 5, states('input_number.hsbo_simulated_remaining_charge') | float(0)] | min }}"
+      - choose:
+          - conditions:
+              - "{{ hour < 12 or hour_price > states('input_number.hsbo_energy_high_threshold') | float(0) }}"
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.hsbo_grid_selling
+                data:
+                  value: "{{ states('input_number.hsbo_grid_selling') | float(0) + hour_forecast }}"
+              - action: input_text.set_value
+                target:
+                  entity_id: input_text.hsbo_hourly_decision
+                data:
+                  value: "Sell to Grid"
+          - conditions:
+              - "{{ states('input_number.hsbo_simulated_remaining_charge') | float(0) > 0 }}"
+              - "{{ hour_price < states('input_number.hsbo_energy_low_threshold') | float(0) }}"
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.hsbo_battery_charging
+                data:
+                  value: "{{ states('input_number.hsbo_battery_charging') | float(0) + charging_amount }}"
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.hsbo_simulated_remaining_charge
+                data:
+                  value: "{{ states('input_number.hsbo_simulated_remaining_charge') | float(0) - charging_amount }}"
+              - action: input_text.set_value
+                target:
+                  entity_id: input_text.hsbo_hourly_decision
+                data:
+                  value: "Charge Battery"
+          - conditions:
+              - "{{ states('input_number.hsbo_simulated_remaining_charge') | float(0) > 0 }}"
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.hsbo_battery_charging
+                data:
+                  value: "{{ states('input_number.hsbo_battery_charging') | float(0) + charging_amount }}"
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.hsbo_simulated_remaining_charge
+                data:
+                  value: "{{ states('input_number.hsbo_simulated_remaining_charge') | float(0) - charging_amount }}"
+              - action: input_text.set_value
+                target:
+                  entity_id: input_text.hsbo_hourly_decision
+                data:
+                  value: "Charge Battery (if needed)"
+        default:
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.hsbo_grid_selling
+            data:
+              value: "{{ states('input_number.hsbo_grid_selling') | float(0) + hour_forecast }}"
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.hsbo_hourly_decision
+            data:
+              value: "Sell to Grid (Battery Full)"
+
+  hsbo_update_hourly_recommendation:
+    alias: "HSBO Update Hourly Recommendation"
+    # This script updates the recommendation for a specific hour based on the decision made
+    # in the hsbo_process_hourly_data script.
+    sequence:
+      - action: input_text.set_value
+        target:
+          entity_id: "input_text.hsbo_recommendation_{{ hour }}"
+        data:
+          value: >
+            {{ hour }}:00: {{ states('input_text.hsbo_hourly_decision') }}
+            {% if states('input_text.hsbo_hourly_decision') == 'Charge Battery' %}
+            - Charge up to {{ [hour_forecast, 5]|min|round(2) }} kWh
+            {% elif states('input_text.hsbo_hourly_decision') == 'Sell to Grid' %}
+            - Potential to sell {{ hour_forecast|round(2) }} kWh
+            {% endif %}
+
+  hsbo_generate_summary:
+    alias: "HSBO Generate Battery Optimization Summary"
+    # This script generates a summary of the battery optimization analysis, including
+    # potential grid selling, battery charging, and recommendations for each hour.
+    # It also determines the optimal time to start charging the battery.
+    sequence:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_charge_start_time
+        data:
+          value: 0
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_generate_summary"
+          message: "HSBO: Starting hourly analysis to determine charge start time"
+      - repeat:
+          count: 11
+          sequence:
+            - variables:
+                current_hour: "{{ repeat.index + 5 }}"
+                current_recommendation: "{{ states('input_text.hsbo_recommendation_' ~ current_hour) }}"
+            - action: script.hsbo_log_event2
+              data:
+                level: "info"
+                component: "hsbo_generate_summary"
+                message: >
+                  HSBO: Analyzing hour {{ current_hour }}:00 - Recommendation: {{ current_recommendation }}
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ 'Charge Battery' in current_recommendation and
+                          'if needed' not in current_recommendation and
+                          states('input_number.hsbo_charge_start_time') | float(0) == 0 }}
+                  sequence:
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.hsbo_charge_start_time
+                      data:
+                        value: "{{ current_hour }}"
+                    - action: script.hsbo_log_event2
+                      data:
+                        level: "info"
+                        component: "hsbo_generate_summary"
+                        message: "HSBO: Charge start time set to {{ current_hour }}:00 (First occurrence of 'Charge Battery')"
+
+      - action: persistent_notification.create
+        data:
+          title: "HSBO Battery Optimization Summary"
+          message: >
+            {% set grid_selling = states('input_number.hsbo_grid_selling') | float(0) %}
+            {% set battery_charging = states('input_number.hsbo_battery_charging') | float(0) %}
+            {% set actual_remaining_charge = states('input_number.hsbo_remaining_charge') | float(0) %}
+            {% set simulated_remaining_charge = states('input_number.hsbo_simulated_remaining_charge') | float(0) %}
+            {% set charge_start_hour = states('input_number.hsbo_charge_start_time') | int(0) %}
+
+            Battery Optimization Summary:{{ '\n' -}}
+            --------------------------------{{ '\n' -}}
+            Current remaining charge: {{ actual_remaining_charge | round(2) }} kWh{{ '\n' -}}
+            Simulated remaining charge after optimizations: {{ simulated_remaining_charge | round(2) }} kWh{{ '\n' -}}
+            Total potential grid selling: {{ grid_selling | round(2) }} kWh{{ '\n' -}}
+            Total potential battery charging: {{ battery_charging | round(2) }} kWh{{ '\n' -}}
+            {{ '\n' -}}
+            {% if simulated_remaining_charge <= 0 %}
+            The battery can be fully charged to 100% by 17:00 based on the simulation.{{ '\n' -}}
+            {% else %}
+            Warning: The simulation shows the battery may not be fully charged by 17:00.{{ '\n' -}}
+            Consider adjusting the charging strategy or using grid power during the lowest-priced hours.{{ '\n' -}}
+            {% endif %}
+            {{ '\n' -}}
+            Hourly Recommendations:{{ '\n' -}}
+            --------------------------------{{ '\n' -}}
+            {% for hour in range(6, 17) %}
+            {{ states('input_text.hsbo_recommendation_' ~ hour) | replace(hour | string ~ ':00: ', hour | string ~ ':00 - ') }}{{ '\n' -}}
+            {% endfor %}
+            {{ '\n' -}}
+            Conclusion:{{ '\n' -}}
+            --------------------------------{{ '\n' -}}
+            {% if charge_start_hour > 0 %}
+            Recommended battery charging start time: {{ charge_start_hour }}:00{{ '\n' -}}
+            {% else %}
+            No specific battery charging time recommended. Consider selling to grid or manual adjustment.{{ '\n' -}}
+            {% endif %}
+      - action: script.hsbo_log_information
+        data:
+          level: "info"
+          component: "hsbo_generate_summary"
+          message: >-
+            {% set grid_selling = states('input_number.hsbo_grid_selling') | float(0) %}
+            {% set battery_charging = states('input_number.hsbo_battery_charging') | float(0) %}
+            {% set actual_remaining_charge = states('input_number.hsbo_remaining_charge') | float(0) %}
+            {% set simulated_remaining_charge = states('input_number.hsbo_simulated_remaining_charge') | float(0) %}
+            {% set charge_start_hour = states('input_number.hsbo_charge_start_time') | int(0) %}
+            {
+              "summary": {"current_charge": "{{ actual_remaining_charge | round(2) }} kWh", "simulated_charge": "{{ simulated_remaining_charge | round(2) }} kWh", "grid_selling": "{{ grid_selling | round(2) }} kWh", "battery_charging": "{{ battery_charging | round(2) }} kWh"},
+              "status": {% if simulated_remaining_charge <= 0 %}"OPTIMAL"{% else %}"WARNING"{% endif %},
+              "warning_message": {% if simulated_remaining_charge <= 0 %}"Battery can be fully charged by 17:00"{% else %}"Battery may not be fully charged by 17:00"{% endif %},
+              "recommendations": [{% for hour in range(6, 17) %}"{{ states('input_text.hsbo_recommendation_' ~ hour) | replace(hour | string ~ ':00: ', hour | string ~ ':00 - ') }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+              "conclusion": {% if charge_start_hour > 0 %}"Start charging at {{ charge_start_hour }}:00"{% else %}"No specific charging time recommended"{% endif %}
+            }
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_generate_summary"
+          message: "HSBO: Hourly analysis complete. Final charge start time: {{ states('input_number.hsbo_charge_start_time') }}:00"
+
+  hsbo_set_working_mode_to_default_tou_periods:
+    alias: "HSBO - Set Working Mode to Default TOU Periods"
+    # This script sets the Huawei Solar system to use default Time-of-Use (TOU) periods.
+    # It configures charging from midnight to 6am and discharging from 5pm to midnight.
+    # It also sets the excess PV energy priority to "charge"
+    sequence:
+      - action: huawei_solar.set_tou_periods
+        data:
+          periods: |-
+            00:01-05:59/1234567/+
+            06:00-10:00/1234567/-
+            17:00-23:59/1234567/-
+          device_id: "{{ states('input_text.hsbo_device_id_batteries') }}"
+      - action: select.select_option
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_excess_pv_energy_use_in_tou') }}"
+        data:
+          option: charge
+      - delay:
+          seconds: 10
+      - action: select.select_option
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_working_mode') }}"
+        data:
+          option: time_of_use_luna2000
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.hsbo_current_priority_mode
+        data:
+          value: default_tou
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_set_working_mode_to_default_tou_periods"
+          message: "Huawei Solar Working Mode set to Default TOU with following periods: Charge 00:01-05:59, Discharge 06:00-10:00 and 17:00-23:59"
+      - action: notify.notify
+        data:
+          message: Huawei Solar Working Mode set to Default TOU
+    mode: single
+    description: "This is the default TOU with two periods. One for charging from midnight to 6am and one for discharging from 5pm to midnight"
+
+  hsbo_set_working_mode_to_fully_fed_to_grid:
+    alias: "HSBO - Set Working Mode to Fully Fed to Grid"
+    # This script sets the Huawei Solar system to feed all generated power to the grid.
+    # This mode is useful when electricity prices are consistently high.
+    # Is currently not used by any automations. Only here as a function for now.
+    sequence:
+      - action: select.select_option
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_working_mode') }}"
+        data:
+          option: fully_fed_to_grid
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.hsbo_current_priority_mode
+        data:
+          value: fully_fed_to_grid
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_set_working_mode_to_fully_fed_to_grid"
+          message: "Huawei Solar Working Mode set to Fully Fed to Grid"
+      - action: notify.notify
+        data:
+          message: Huawei Solar Working Mode set to Fully Fed to Grid
+    description: "This forces the Solar Plant to Fully Fed to Grid"
+
+  hsbo_set_working_mode_to_maximise_self_consumption:
+    alias: "HSBO - Set Working Mode to Maximise Self Consumption"
+    # This script sets the Huawei Solar system to maximize self-consumption of generated power.
+    # In this mode, the system prioritizes using solar power for household consumption and
+    # battery charging before feeding excess to the grid.
+    sequence:
+      - action: select.select_option
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_working_mode') }}"
+        data:
+          option: maximise_self_consumption
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.hsbo_current_priority_mode
+        data:
+          value: maximise_self_consumption
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_set_working_mode_to_maximise_self_consumption"
+          message: "Huawei Solar Working Mode set to Maximise Self Consumption"
+      - action: notify.notify
+        data:
+          message: Huawei Solar Working Mode set to Maximise Self Consumption
+    description: "This script enables the Maximise Self Consumption working mode. TOU is not used in this mode"
+
+  hsbo_force_charge_battery:
+    alias: "HSBO Force Charge Battery"
+    # This script forces the battery to charge at a specific power level for a set duration. 
+    sequence:
+      - action: number.set_value
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_grid_charge_cutoff_soc') }}"
+        data:
+          value: 100.0
+      - action: huawei_solar.forcible_charge
+        data:
+          device_id: "{{ states('input_text.hsbo_device_id_batteries') }}"
+          duration: "{{ duration }}"
+          power: "{{ power }}"
+    fields:
+      duration:
+        description: "Duration of the charge in minutes"
+        example: 10
+        required: true
+      power:
+        description: "Power level for the charge in watts"
+        example: "5000"
+        required: true
+
+  hsbo_stop_force_charge_battery:
+    alias: "HSBO Stop Force Charge Battery"
+    sequence:
+      - action: huawei_solar.stop_forcible_charge
+        data:
+          device_id: "{{ states('input_text.hsbo_device_id_batteries') }}"
+
+  hsbo_set_morning_tou_mode_disable_battery_charge:
+    alias: "HSBO - Set Morning TOU Mode and Disable Battery Charge"
+    # This script sets the system to a special TOU mode where battery charging is disabled
+    # All excess power is fed to the grid. This can be useful during periods of
+    # consistently high grid prices.
+    sequence:
+      - action: huawei_solar.set_tou_periods
+        data:
+          periods: 06:00-14:00/1234567/-
+          device_id: "{{ states('input_text.hsbo_device_id_batteries') }}"
+      - action: select.select_option
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_excess_pv_energy_use_in_tou') }}"
+        data:
+          option: fed_to_grid
+      - delay:
+          seconds: 10
+      - action: select.select_option
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_working_mode') }}"
+        data:
+          option: time_of_use_luna2000
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.hsbo_current_priority_mode
+        data:
+          value: tou_battery_charge_disabled
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_set_morning_tou_mode_disable_battery_charge"
+          message: "Huawei Solar set to Morning TOU Mode with Disabled Battery Discharge"
+      - action: notify.notify
+        data:
+          message: Huawei Solar set to Morning TOU Mode with Disabled Battery Discharge
+    mode: single
+    description: "This script enables TOU mode, disables battery discharge between 6:00 AM and 2:00 PM, and feeds excess power to the grid during this period."
+
+  hsbo_set_working_mode_to_tou_and_disable_battery_charging_and_discharging:
+    alias: "HSBO - Set Working Mode to TOU and Disable Battery Charging and Discharging"
+    # This script sets the system to a special TOU mode where battery charging and discharging
+    # are disabled. All excess power is fed to the grid. This can be useful during periods
+    # of consistently high grid prices or when you charge your electric vehichle to avoid
+    # discharging the battery during EV charging.
+    sequence:
+      - action: huawei_solar.set_tou_periods
+        data:
+          periods: 00:00-00:01/1234567/+
+          device_id: "{{ states('input_text.hsbo_device_id_batteries') }}"
+      - action: select.select_option
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_excess_pv_energy_use_in_tou') }}"
+        data:
+          option: fed_to_grid
+      - delay:
+          seconds: 10
+      - action: select.select_option
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_working_mode') }}"
+        data:
+          option: time_of_use_luna2000
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.hsbo_current_priority_mode
+        data:
+          value: tou_battery_charge_discharge_disabled
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_set_working_mode_to_tou_and_disable_battery_charging_and_discharging"
+          message: "Huawei Solar Working Mode set to TOU with Disabled Battery Charging and Discharging"
+      - action: notify.notify
+        data:
+          message: Huawei Solar Working Mode set to TOU with Disabled Battery Charging and Discharging
+    mode: single
+    description: "This script enables TOU and disables use of battery for both discharging and charging. Excess power produced will be fed to grid"
+
+  hsbo_disable_grid_export:
+    alias: "HSBO - Disable Grid Export"
+    # This script disables exporting power to the grid. It's typically used when electricity
+    # prices are negative to avoid selling power at a loss.
+    sequence:
+      - action: huawei_solar.set_maximum_feed_grid_power_percent
+        data:
+          device_id: "{{ states('input_text.hsbo_device_id_inverter') }}"
+          power_percentage: 0
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_disable_grid_export"
+          message: "HSBO: Solar Inverter GRID EXPORT disabled"    
+    mode: single
+    description: "Disables grid export and sends notifications"
+  hsbo_enable_grid_export:
+    alias: "HSBO - Enable Grid Export"
+    # This script enables exporting power to the grid. It's used when electricity prices
+    # are positive and it's beneficial to sell excess power.
+    sequence:
+      - action: huawei_solar.set_maximum_feed_grid_power_percent
+        data:
+          device_id: "{{ states('input_text.hsbo_device_id_inverter') }}"
+          power_percentage: 100
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_enable_grid_export"
+          message: "HSBO: Solar Inverter GRID EXPORT enabled"      
+    mode: single
+    description: "Enables grid export and sends notifications"
+  hsbo_calculate_next_day_charging:
+    alias: "HSBO Calculate Next Day Charging Strategy"
+    sequence:
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_calculate_next_day_charging"
+          message: "HSBO: Starting next day charging calculation"
+
+      # Get current battery SoC and system parameters
+      - variables:
+          current_battery_soc: "{{ states(states('input_text.hsbo_batteries_state_of_capacity')) | float(0) }}"
+          battery_max_capacity: "{{ states('input_number.hsbo_battery_max_capacity') | float(10) }}"
+          current_battery_capacity: "{{ (current_battery_soc / 100 * battery_max_capacity) | round(2) }}"
+          battery_min_capacity: "{{ battery_max_capacity * 0.05 }}"  # 5% minimum capacity
+          current_month: "{{ now().month }}"
+
+      - action: script.hsbo_log_information
+        data:
+          level: "info"
+          component: "hsbo_calculate_next_day_charging"
+          message: >
+            HSBO Debug: Current battery SoC: {{ current_battery_soc }}%,
+            Capacity: {{ current_battery_capacity }} kWh,
+            Max Capacity: {{ battery_max_capacity }} kWh,
+            Min Capacity: {{ battery_min_capacity }} kWh,
+            Current month: {{ current_month }}
+
+      # Get Electricity prices for the next day
+      # Price Analysis Variables
+
+      # - variables:
+      #     total_prices: "{{ state_attr(states('input_text.hsbo_energi_data_service_total_price'), 'raw_tomorrow') }}"
+      #     sales_prices: "{{ state_attr(states('input_text.hsbo_energi_data_service_sales_price'), 'raw_tomorrow') }}"
+      #     conversion_loss: "{{ states('input_number.hsbo_battery_conversion_loss') | float(20) }}"
+
+      - variables:
+          total_prices: "{{ states('sensor.hsbo_price_tomorrow_total_hourly') | from_json | default([]) }}"
+          sales_prices: "{{ states('sensor.hsbo_price_tomorrow_sales_hourly') | from_json | default([]) }}"
+          conversion_loss: "{{ states('input_number.hsbo_battery_conversion_loss') | float(20) }}"
+          next_day: "{{ (now() + timedelta(days=1)).strftime('%Y-%m-%d') }}"
+
+      - action: script.hsbo_log_information
+        data:
+          level: "info"
+          component: "hsbo_calculate_next_day_charging"
+          message: >
+            {
+              "legend": {
+                "date": "{{ next_day }}" "(Tomorrow)",
+                "h": "hour",
+                "t": "total_price (next day)",
+                "s": "sales_price (next day)", 
+                "c": "charging_price_with_loss"
+              },
+              "Tomorrow prices": [
+                {"h": "00", "t": {{ '%0.3f' | format(total_prices[0] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[0] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[0] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "01", "t": {{ '%0.3f' | format(total_prices[1] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[1] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[1] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "02", "t": {{ '%0.3f' | format(total_prices[2] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[2] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[2] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "03", "t": {{ '%0.3f' | format(total_prices[3] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[3] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[3] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "04", "t": {{ '%0.3f' | format(total_prices[4] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[4] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[4] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "05", "t": {{ '%0.3f' | format(total_prices[5] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[5] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[5] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "06", "t": {{ '%0.3f' | format(total_prices[6] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[6] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[6] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "07", "t": {{ '%0.3f' | format(total_prices[7] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[7] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[7] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "08", "t": {{ '%0.3f' | format(total_prices[8] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[8] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[8] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "09", "t": {{ '%0.3f' | format(total_prices[9] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[9] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[9] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "10", "t": {{ '%0.3f' | format(total_prices[10] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[10] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[10] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "11", "t": {{ '%0.3f' | format(total_prices[11] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[11] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[11] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "12", "t": {{ '%0.3f' | format(total_prices[12] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[12] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[12] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "13", "t": {{ '%0.3f' | format(total_prices[13] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[13] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[13] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "14", "t": {{ '%0.3f' | format(total_prices[14] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[14] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[14] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "15", "t": {{ '%0.3f' | format(total_prices[15] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[15] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[15] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "16", "t": {{ '%0.3f' | format(total_prices[16] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[16] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[16] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "17", "t": {{ '%0.3f' | format(total_prices[17] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[17] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[17] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "18", "t": {{ '%0.3f' | format(total_prices[18] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[18] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[18] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "19", "t": {{ '%0.3f' | format(total_prices[19] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[19] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[19] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "20", "t": {{ '%0.3f' | format(total_prices[20] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[20] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[20] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "21", "t": {{ '%0.3f' | format(total_prices[21] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[21] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[21] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "22", "t": {{ '%0.3f' | format(total_prices[22] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[22] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[22] | default(0) * (1 + conversion_loss / 100)) }}},
+                {"h": "23", "t": {{ '%0.3f' | format(total_prices[23] | default(0)) }}, "s": {{ '%0.3f' | format(sales_prices[23] | default(0)) }}, "c": {{ '%0.3f' | format(total_prices[23] | default(0) * (1 + conversion_loss / 100)) }}}
+              ]
+            }
+
+      # - action: script.hsbo_log_information
+      #   data:
+      #     level: "info"
+      #     component: "hsbo_calculate_next_day_charging"
+      #     message: >
+      #       {
+      #         "legend": {
+      #           "h": "hour",
+      #           "t": "total_price",
+      #           "s": "sales_price", 
+      #           "c": "charging_price_with_loss"
+      #         },
+      #         "prices": [
+      #           {"h": "00", "t": {{ total_prices[0]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[0]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[0]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "01", "t": {{ total_prices[1]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[1]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[1]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "02", "t": {{ total_prices[2]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[2]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[2]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "03", "t": {{ total_prices[3]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[3]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[3]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "04", "t": {{ total_prices[4]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[4]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[4]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "05", "t": {{ total_prices[5]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[5]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[5]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "06", "t": {{ total_prices[6]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[6]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[6]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "07", "t": {{ total_prices[7]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[7]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[7]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "08", "t": {{ total_prices[8]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[8]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[8]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "09", "t": {{ total_prices[9]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[9]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[9]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "10", "t": {{ total_prices[10]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[10]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[10]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "11", "t": {{ total_prices[11]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[11]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[11]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "12", "t": {{ total_prices[12]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[12]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[12]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "13", "t": {{ total_prices[13]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[13]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[13]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "14", "t": {{ total_prices[14]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[14]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[14]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "15", "t": {{ total_prices[15]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[15]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[15]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "16", "t": {{ total_prices[16]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[16]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[16]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "17", "t": {{ total_prices[17]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[17]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[17]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "18", "t": {{ total_prices[18]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[18]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[18]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "19", "t": {{ total_prices[19]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[19]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[19]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "20", "t": {{ total_prices[20]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[20]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[20]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "21", "t": {{ total_prices[21]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[21]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[21]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "22", "t": {{ total_prices[22]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[22]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[22]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}},
+      #           {"h": "23", "t": {{ total_prices[23]['price'] | default(0) | round(3) }}, "s": {{ sales_prices[23]['price'] | default(0) | round(3) }}, "c": {{ (total_prices[23]['price'] | default(0) * (1 + conversion_loss/100)) | round(3) }}}
+      #         ]
+      #       }
+
+      # - variables:
+      #     raw_price_data: >-
+      #       [
+      #         {% set total_prices = state_attr(states('input_text.hsbo_energi_data_service_total_price'), 'raw_tomorrow') %}
+      #         {% set sales_prices = state_attr(states('input_text.hsbo_energi_data_service_sales_price'), 'raw_tomorrow') %}
+      #         {% set conversion_loss = states('input_number.hsbo_battery_conversion_loss') | float(20) %}
+      #         {% for hour in range(24) %}
+      #           {
+      #             "h": "{{ '%02d'|format(hour) }}",
+      #             "p": {{ total_prices[hour].price|default(0)|round(3) }},
+      #             "s": {{ sales_prices[hour].price|default(0)|round(3) }},
+      #             "c": {{ (total_prices[hour].price|default(0) * (1 + conversion_loss/100))|round(3) }}
+      #           }{{ '' if loop.last else ',' }}
+      #         {% endfor %}
+      #       ]
+
+      #     night_analysis: >-
+      #       {% set prices = raw_price_data|from_json %}
+      #       {% set night_data = prices[0:6] %}
+      #       {% set best = {'start': 0, 'avg': 999999} %}
+      #       {% for i in range(4) if i + 3 <= 6 %}
+      #         {% set seq_sum = 0 %}
+      #         {% for j in range(3) %}
+      #           {% set seq_sum = seq_sum + night_data[i+j].c %}
+      #         {% endfor %}
+      #         {% set avg = seq_sum / 3 %}
+      #         {% if avg < best.avg %}
+      #           {% set best = {'start': i, 'avg': avg} %}
+      #         {% endif %}
+      #       {% endfor %}
+      #       { "start": "{{ '%02d:00'|format(best.start) }}", "end": "{{ '%02d:00'|format(best.start + 3) }}", "avg_price": {{ best.avg|round(3) }} }
+
+      #     day_analysis: >-
+      #       {% set prices = raw_price_data|from_json %}
+      #       {% set day_data = prices[6:17] %}
+      #       {% set best = {'start': 6, 'avg': 999999} %}
+      #       {% for i in range(day_data|length - 2) %}
+      #         {% set seq_sum = 0 %}
+      #         {% for j in range(3) %}
+      #           {% set seq_sum = seq_sum + day_data[i+j].c %}
+      #         {% endfor %}
+      #         {% set avg = seq_sum / 3 %}
+      #         {% if avg < best.avg %}
+      #           {% set best = {'start': i + 6, 'avg': avg} %}
+      #         {% endif %}
+      #       {% endfor %}
+      #       { "start": "{{ '%02d:00'|format(best.start) }}", "end": "{{ '%02d:00'|format(best.start + 3) }}", "avg_price": {{ best.avg|round(3) }} }
+
+      #     selling_analysis: >-
+      #       {% set prices = raw_price_data|from_json %}
+      #       {% set sorted = prices|sort(attribute='s')|reverse|map(attribute='h')|list %}
+      #       { "best_hours": ["{{ sorted[0] }}:00", "{{ sorted[1] }}:00", "{{ sorted[2] }}:00"] }
+
+      #     price_summary: >-
+      #       {
+      #         "legend": {
+      #           "h": "hour",
+      #           "p": "total_price",
+      #           "c": "charging_price_with_loss",
+      #           "s": "sales_price"
+      #         },
+      #         "hourly": {{ raw_price_data }},
+      #         "charging_windows": {
+      #           "night": {{ night_analysis }},
+      #           "day": {{ day_analysis }}
+      #         },
+      #         "price_opportunities": {
+      #           "negative_hours": [
+      #             {% set prices = raw_price_data|from_json %}
+      #             {% for p in prices if p.s < 0 %}
+      #               {"h": "{{ p.h }}:00", "s": {{ p.s }}}{{ '' if loop.last else ',' }}
+      #             {% endfor %}
+      #           ],
+      #           "best_selling": {{ selling_analysis }}
+      #         }
+      #       }
+
+      # # Then modify the logging action
+      # - action: script.hsbo_log_information
+      #   data:
+      #     level: "info"
+      #     component: "hsbo_calculate_next_day_charging"
+      #     message: "{{ price_summary }}"
+
+      # Get tomorrow's solar forecast
+      - variables:
+          # tomorrow_forecast_raw: "{{ state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'estimate') }}"
+          # tomorrow_forecast: >
+          #   {% if tomorrow_forecast_raw is not none and tomorrow_forecast_raw | float(-1) >= 0 %}
+          #     {{ tomorrow_forecast_raw | float(0) }}
+          #   {% elif state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_today'), 'estimate') is not none
+          #           and state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_today'), 'estimate') | float(-1) >= 0 %}
+          #     {{ state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_today'), 'estimate') | float(0) }}
+          #   {% else %}
+          #     5
+          #   {% endif %}
+          forecast_data: "{{ state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') }}"
+          solar_factor: "{{ states('input_number.hsbo_solar_production_factor') | float(0.9) }}"
+          prediction_confidence: "{{ states('sensor.hsbo_consumption_prediction_confidence') }}"
+          # Calculate Surplus Energy for each hour
+          surplus_hour_00: >
+            {% set consumption = states('sensor.hsbo_house_consumption_00_01_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 0 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_01: >
+            {% set consumption = states('sensor.hsbo_house_consumption_01_02_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 1 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_02: >
+            {% set consumption = states('sensor.hsbo_house_consumption_02_03_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 2 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_03: >
+            {% set consumption = states('sensor.hsbo_house_consumption_03_04_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 3 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_04: >
+            {% set consumption = states('sensor.hsbo_house_consumption_04_05_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 4 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_05: >
+            {% set consumption = states('sensor.hsbo_house_consumption_05_06_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 5 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_06: >
+            {% set consumption = states('sensor.hsbo_house_consumption_06_07_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 6 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_07: >
+            {% set consumption = states('sensor.hsbo_house_consumption_07_08_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 7 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_08: >
+            {% set consumption = states('sensor.hsbo_house_consumption_08_09_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 8 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_09: >
+            {% set consumption = states('sensor.hsbo_house_consumption_09_10_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 9 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_10: >
+            {% set consumption = states('sensor.hsbo_house_consumption_10_11_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 10 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_11: >
+            {% set consumption = states('sensor.hsbo_house_consumption_11_12_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 11 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_12: >
+            {% set consumption = states('sensor.hsbo_house_consumption_12_13_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 12 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_13: >
+            {% set consumption = states('sensor.hsbo_house_consumption_13_14_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 13 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_14: >
+            {% set consumption = states('sensor.hsbo_house_consumption_14_15_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 14 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_15: >
+            {% set consumption = states('sensor.hsbo_house_consumption_15_16_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 15 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_16: >
+            {% set consumption = states('sensor.hsbo_house_consumption_16_17_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 16 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_17: >
+            {% set consumption = states('sensor.hsbo_house_consumption_17_18_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 17 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_18: >
+            {% set consumption = states('sensor.hsbo_house_consumption_18_19_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 18 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_19: >
+            {% set consumption = states('sensor.hsbo_house_consumption_19_20_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 19 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_20: >
+            {% set consumption = states('sensor.hsbo_house_consumption_20_21_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 20 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_21: >
+            {% set consumption = states('sensor.hsbo_house_consumption_21_22_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 21 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_22: >
+            {% set consumption = states('sensor.hsbo_house_consumption_22_23_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 22 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          surplus_hour_23: >
+            {% set consumption = states('sensor.hsbo_house_consumption_23_00_energy_average_3d') | float(0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% set solar = namespace(value=0) %}
+            {% for entry in forecast_data if entry is defined %}
+              {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+              {% if period_start == 23 %}
+                {% set solar.value = entry.pv_estimate * solar_factor | float(0) %}
+              {% endif %}
+            {% endfor %}
+            {{ [(solar.value - consumption), 0] | max | round(3) }}
+
+          # Summarize certain periods of surplus energy
+          surplus_energy_6am_10am: >
+            {% set total = namespace(value=0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% for hour in range(6, 10) %}
+              {% set consumption = states('sensor.hsbo_house_consumption_%02d_%02d_energy_average_3d' | format(hour, hour+1)) | float(0) %}
+              {% set solar = namespace(value=0) %}
+              {% for entry in forecast_data if entry is defined %}
+                {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+                {% if period_start == hour %}
+                  {% set solar.value = entry.pv_estimate | float(0) %}
+                {% endif %}
+              {% endfor %}
+              {% set hour_surplus = [(solar.value - consumption), 0] | max %}
+              {% set total.value = total.value + hour_surplus %}
+            {% endfor %}
+            {{ total.value | round(3) }}
+          surplus_energy_10am_5pm: >
+            {% set total = namespace(value=0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% for hour in range(10, 17) %}
+              {% set consumption = states('sensor.hsbo_house_consumption_%02d_%02d_energy_average_3d' | format(hour, hour+1)) | float(0) %}
+              {% set solar = namespace(value=0) %}
+              {% for entry in forecast_data if entry is defined %}
+                {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+                {% if period_start == hour %}
+                  {% set solar.value = entry.pv_estimate | float(0) %}
+                {% endif %}
+              {% endfor %}
+              {% set hour_surplus = [(solar.value - consumption), 0] | max %}
+              {% set total.value = total.value + hour_surplus %}
+            {% endfor %}
+            {{ total.value | round(3) }}
+          surplus_energy_5am_9pm: >
+            {% set total = namespace(value=0) %}
+            {% set forecast_data = state_attr(states('input_text.hsbo_solcast_pv_forecast_forecast_tomorrow'), 'detailedHourly') %}
+            {% for hour in range(17, 21) %}
+              {% set consumption = states('sensor.hsbo_house_consumption_%02d_%02d_energy_average_3d' | format(hour, hour+1)) | float(0) %}
+              {% set solar = namespace(value=0) %}
+              {% for entry in forecast_data if entry is defined %}
+                {% set period_start = as_timestamp(entry.period_start) | timestamp_custom('%H', true) | int %}
+                {% if period_start == hour %}
+                  {% set solar.value = entry.pv_estimate | float(0) %}
+                {% endif %}
+              {% endfor %}
+              {% set hour_surplus = [(solar.value - consumption), 0] | max %}
+              {% set total.value = total.value + hour_surplus %}
+            {% endfor %}
+            {{ total.value | round(3) }}
+
+      # Debug logging
+      - action: script.hsbo_log_information
+        data:
+          level: "info"
+          component: "hsbo_calculate_next_day_charging"
+          message: >
+            HSBO Debug: Hourly surplus values (solar forecast tomorrow - average consumption):,
+            00:00: {{ surplus_hour_00 }} kWh,
+            01:00: {{ surplus_hour_01 }} kWh,
+            02:00: {{ surplus_hour_02 }} kWh,
+            03:00: {{ surplus_hour_03 }} kWh,
+            04:00: {{ surplus_hour_04 }} kWh,
+            05:00: {{ surplus_hour_05 }} kWh,
+            06:00: {{ surplus_hour_06 }} kWh,
+            07:00: {{ surplus_hour_07 }} kWh,
+            08:00: {{ surplus_hour_08 }} kWh,
+            09:00: {{ surplus_hour_09 }} kWh,
+            10:00: {{ surplus_hour_10 }} kWh,
+            11:00: {{ surplus_hour_11 }} kWh,
+            12:00: {{ surplus_hour_12 }} kWh,
+            13:00: {{ surplus_hour_13 }} kWh,
+            14:00: {{ surplus_hour_14 }} kWh,
+            15:00: {{ surplus_hour_15 }} kWh,
+            16:00: {{ surplus_hour_16 }} kWh,
+            17:00: {{ surplus_hour_17 }} kWh,
+            18:00: {{ surplus_hour_18 }} kWh,
+            19:00: {{ surplus_hour_19 }} kWh,
+            20:00: {{ surplus_hour_20 }} kWh,
+            21:00: {{ surplus_hour_21 }} kWh,
+            22:00: {{ surplus_hour_22 }} kWh,
+            23:00: {{ surplus_hour_23 }} kWh,
+            Surplus PV energy between 6am-10am: {{ surplus_energy_6am_10am }} kWh,
+            Surplus PV energy between 10am-5pm: {{ surplus_energy_10am_5pm }} kWh,
+            Surplus PV energy between 5pm-9pm: {{ surplus_energy_5pm_9pm }} kWh,
+
+      # Calculate solar charging capacity and energy needs
+      - variables:
+          max_charge_power: "{{ states(states('input_text.hsbo_batteries_maximum_charging_power')) | float(5000) }}"
+          max_discharge_power: "{{ states(states('input_text.hsbo_batteries_maximum_discharging_power')) | float(5000) }}"
+          max_charge_energy_per_hour: "{{ (max_charge_power / 1000) }}"  # Convert W to kW
+
+          # Calculate charging headroom by hour (considering both solar production and battery limits)
+          charging_headroom_hour_00: "{{ [surplus_hour_00, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_01: "{{ [surplus_hour_01, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_02: "{{ [surplus_hour_02, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_03: "{{ [surplus_hour_03, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_04: "{{ [surplus_hour_04, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_05: "{{ [surplus_hour_05, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_06: "{{ [surplus_hour_06, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_07: "{{ [surplus_hour_07, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_08: "{{ [surplus_hour_08, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_09: "{{ [surplus_hour_09, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_10: "{{ [surplus_hour_10, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_11: "{{ [surplus_hour_11, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_12: "{{ [surplus_hour_12, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_13: "{{ [surplus_hour_13, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_14: "{{ [surplus_hour_14, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_15: "{{ [surplus_hour_15, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_16: "{{ [surplus_hour_16, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_17: "{{ [surplus_hour_17, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_18: "{{ [surplus_hour_18, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_19: "{{ [surplus_hour_19, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_20: "{{ [surplus_hour_20, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_21: "{{ [surplus_hour_21, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_22: "{{ [surplus_hour_22, max_charge_energy_per_hour] | min }}"
+          charging_headroom_hour_23: "{{ [surplus_hour_23, max_charge_energy_per_hour] | min }}"
+
+          # Calculate total charging headroom (sum of all hourly headrooms)
+          total_charging_headroom: >
+            {% set total = charging_headroom_hour_00 | float(0) +
+                        charging_headroom_hour_01 | float(0) +
+                        charging_headroom_hour_02 | float(0) +
+                        charging_headroom_hour_03 | float(0) +
+                        charging_headroom_hour_04 | float(0) +
+                        charging_headroom_hour_05 | float(0) +
+                        charging_headroom_hour_06 | float(0) +
+                        charging_headroom_hour_07 | float(0) +
+                        charging_headroom_hour_08 | float(0) +
+                        charging_headroom_hour_09 | float(0) +
+                        charging_headroom_hour_10 | float(0) +
+                        charging_headroom_hour_11 | float(0) +
+                        charging_headroom_hour_12 | float(0) +
+                        charging_headroom_hour_13 | float(0) +
+                        charging_headroom_hour_14 | float(0) +
+                        charging_headroom_hour_15 | float(0) +
+                        charging_headroom_hour_16 | float(0) +
+                        charging_headroom_hour_17 | float(0) +
+                        charging_headroom_hour_18 | float(0) +
+                        charging_headroom_hour_19 | float(0) +
+                        charging_headroom_hour_20 | float(0) +
+                        charging_headroom_hour_21 | float(0) +
+                        charging_headroom_hour_22 | float(0) +
+                        charging_headroom_hour_23 | float(0) %}
+            {{ total | round(2) }}
+
+          energy_need_0am_6am: >
+            {% set energy_need_0am_6am =
+              states('sensor.hsbo_house_consumption_00_01_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_01_02_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_02_03_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_03_04_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_04_05_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_05_06_energy_average_3d') | float(0)
+            %}
+            {{ energy_need_0am_6am | round(2) }}
+          energy_need_6am_10am: "{{ states('sensor.hsbo_weighted_consumption_morning_peak') | float(0) }}"
+          # energy_need_6am_10am: >
+          #   {% set energy_need_6am_10am =
+          #     states('sensor.hsbo_house_consumption_06_07_energy_average_3d') | float(0) +
+          #     states('sensor.hsbo_house_consumption_07_08_energy_average_3d') | float(0) +
+          #     states('sensor.hsbo_house_consumption_08_09_energy_average_3d') | float(0) +
+          #     states('sensor.hsbo_house_consumption_09_10_energy_average_3d') | float(0)
+          #   %}
+          #   {{ energy_need_6am_10am | round(2) }}
+          energy_need_10am_5pm: >
+            {% set energy_need_10am_5pm =
+              states('sensor.hsbo_house_consumption_09_10_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_10_11_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_11_12_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_12_13_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_14_15_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_15_16_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_16_17_energy_average_3d') | float(0) 
+            %}
+            {{ energy_need_10am_5pm | round(2) }}
+          energy_need_5pm_9pm: "{{ states('sensor.hsbo_weighted_consumption_evening_peak') | float(0) }}"
+          # energy_need_5pm_9pm: >
+          #   {% set energy_need_5pm_9pm =
+          #     states('sensor.hsbo_house_consumption_17_18_energy_average_3d') | float(0) +
+          #     states('sensor.hsbo_house_consumption_18_19_energy_average_3d') | float(0) +
+          #     states('sensor.hsbo_house_consumption_19_20_energy_average_3d') | float(0) +
+          #     states('sensor.hsbo_house_consumption_20_21_energy_average_3d') | float(0) 
+          #   %}
+          #   {{ energy_need_5pm_9pm | round(2) }}
+          energy_need_9pm_midnight: >
+            {% set energy_need_9pm_midnight =
+              states('sensor.hsbo_house_consumption_21_22_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_22_23_energy_average_3d') | float(0) +
+              states('sensor.hsbo_house_consumption_23_00_energy_average_3d') | float(0)
+            %}
+            {{ energy_need_9pm_midnight | round(2) }}
+          total_energy_need: "{{ energy_need_0am_6am + energy_need_6am_10am + energy_need_10am_5pm + energy_need_5pm_9pm + energy_need_9pm_midnight}}"
+
+      - action: script.hsbo_log_information
+        data:
+          level: "info"
+          component: "hsbo_calculate_next_day_charging"
+          message: |
+            {
+              "battery_status": {
+                "current_soc": {{ current_battery_soc }},
+                "current_capacity": {{ current_battery_capacity }},
+                "max_capacity": {{ battery_max_capacity }},
+                "min_capacity": {{ battery_min_capacity }}
+              },
+              "charging_analysis": {
+                "max_charge_rate_per_hour": {{ max_charge_energy_per_hour }},
+                "charging_headroom": {
+                  "00:00": {{ charging_headroom_hour_00 }},
+                  "01:00": {{ charging_headroom_hour_01 }},
+                  "02:00": {{ charging_headroom_hour_02 }},
+                  "03:00": {{ charging_headroom_hour_03 }},
+                  "04:00": {{ charging_headroom_hour_04 }},
+                  "05:00": {{ charging_headroom_hour_05 }},
+                  "06:00": {{ charging_headroom_hour_06 }},
+                  "07:00": {{ charging_headroom_hour_07 }},
+                  "08:00": {{ charging_headroom_hour_08 }},
+                  "09:00": {{ charging_headroom_hour_09 }},
+                  "10:00": {{ charging_headroom_hour_10 }},
+                  "11:00": {{ charging_headroom_hour_11 }},
+                  "12:00": {{ charging_headroom_hour_12 }},
+                  "13:00": {{ charging_headroom_hour_13 }},
+                  "14:00": {{ charging_headroom_hour_14 }},
+                  "15:00": {{ charging_headroom_hour_15 }},
+                  "16:00": {{ charging_headroom_hour_16 }},
+                  "17:00": {{ charging_headroom_hour_17 }},
+                  "18:00": {{ charging_headroom_hour_18 }},
+                  "19:00": {{ charging_headroom_hour_19 }},
+                  "20:00": {{ charging_headroom_hour_20 }},
+                  "21:00": {{ charging_headroom_hour_21 }},
+                  "22:00": {{ charging_headroom_hour_22 }},
+                  "23:00": {{ charging_headroom_hour_23 }}
+                },
+                "total_charging_headroom": {{ total_charging_headroom }}
+              },
+              "energy_needs": {
+                "0am_6am": {{ energy_need_0am_6am }},
+                "6am_10am": {{ energy_need_6am_10am }},
+                "10am_5pm": {{ energy_need_10am_5pm }},
+                "5pm_9pm": {{ energy_need_5pm_9pm }},
+                "9pm_midnight": {{ energy_need_9pm_midnight }},
+                "total": {{ total_energy_need }}
+              },
+              "prediction_confidence": {{ states('sensor.hsbo_consumption_prediction_confidence') }},
+              "status": "{{ state_attr('sensor.hsbo_consumption_prediction_confidence', 'status') }}",
+              "morning_peak": {{ states('sensor.hsbo_weighted_consumption_morning_peak') }},
+              "evening_peak": {{ states('sensor.hsbo_weighted_consumption_evening_peak') }},
+              "validation": {
+                "missing_hours": "{{ state_attr('sensor.hsbo_consumption_prediction_confidence', 'missing_hours') }}"
+              }
+            }
+
+      # Price checks (is total price + conversion loss in lower tariff period higher than purchase price in a higher tariff period)
+      - variables:
+          # is_night_price_lower_than_morning:   # lowest two hours during night + conversion loss (20%) compared to prices between 6am and 10am
+          # is_night_price_lower_than_afternoon:  # lowest two hours during night + conversion loss (20%) compared to prices between 10am and 5pm
+          # is_night_price_lower_than_evening:  # lowest two hours during night + conversion loss (20%) compared to prices between 5pm and 9pm
+          # is_night_price_lower_than_late_evening: # lowest two hours during night + conversion loss (20%) compared to prices between 9pm and midnight
+          # is_afternoon_price_lower_than_evening: # lowest two hours during afternoon + conversion loss (20%) compared to prices between 5pm and 9pm
+          # is_afternoon_price_lower_than_late_evening: # lowest two hours during afternoon + conversion loss (20%) compared to prices between 9pm and midnight
+          
+          is_night_price_lower_than_morning: >
+            {% set next_day_total_prices_hourly = states('sensor.hsbo_price_tomorrow_total_hourly') | from_json | default([]) %}
+            {% set night_hours = next_day_total_prices_hourly[0:6] %}
+            {% set morning_hours = next_day_total_prices_hourly[6:10] %}
+            {% set lowest_night_prices = (night_hours | sort)[:2] %}
+            {% set avg_lowest_night_price = (lowest_night_prices | sum) / 2 %}
+            {% set night_price_with_loss = avg_lowest_night_price * 1.2 %}
+            {% set avg_morning_price = (morning_hours | sum) / morning_hours | length %}
+            {{ night_price_with_loss < avg_morning_price }}
+
+          is_night_price_lower_than_afternoon: >
+            {% set next_day_total_prices_hourly = states('sensor.hsbo_price_tomorrow_total_hourly') | from_json | default([]) %}
+            {% set night_hours = next_day_total_prices_hourly[0:6] %}
+            {% set afternoon_hours = next_day_total_prices_hourly[10:17] %}
+            {% set lowest_night_prices = (night_hours | sort)[:2] %}
+            {% set avg_lowest_night_price = (lowest_night_prices | sum) / 2 %}
+            {% set night_price_with_loss = avg_lowest_night_price * 1.2 %}
+            {% set avg_afternoon_price = (afternoon_hours | sum) / afternoon_hours | length %}
+            {{ night_price_with_loss < avg_afternoon_price }}
+
+          is_night_price_lower_than_evening: >
+            {% set next_day_total_prices_hourly = states('sensor.hsbo_price_tomorrow_total_hourly') | from_json | default([]) %}
+            {% set night_hours = next_day_total_prices_hourly[0:6] %}
+            {% set evening_hours = next_day_total_prices_hourly[17:21] %}
+            {% set lowest_night_prices = (night_hours | sort)[:2] %}
+            {% set avg_lowest_night_price = (lowest_night_prices | sum) / 2 %}
+            {% set night_price_with_loss = avg_lowest_night_price * 1.2 %}
+            {% set avg_evening_price = (evening_hours | sum) / evening_hours | length %}
+            {{ night_price_with_loss < avg_evening_price }}
+
+          is_night_price_lower_than_late_evening: >
+            {% set next_day_total_prices_hourly = states('sensor.hsbo_price_tomorrow_total_hourly') | from_json | default([]) %}
+            {% set night_hours = next_day_total_prices_hourly[0:6] %}
+            {% set late_evening_hours = next_day_total_prices_hourly[21:] %}
+            {% set lowest_night_prices = (night_hours | sort)[:2] %}
+            {% set avg_lowest_night_price = (lowest_night_prices | sum) / 2 %}
+            {% set night_price_with_loss = avg_lowest_night_price * 1.2 %}
+            {% set avg_late_evening_price = (late_evening_hours | sum) / late_evening_hours | length %}
+            {{ night_price_with_loss < avg_late_evening_price }}
+
+          is_afternoon_price_lower_than_evening: >
+            {% set next_day_total_prices_hourly = states('sensor.hsbo_price_tomorrow_total_hourly') | from_json | default([]) %}
+            {% set afternoon_hours = next_day_total_prices_hourly[10:17] %}
+            {% set evening_hours = next_day_total_prices_hourly[17:21] %}
+            {% set lowest_afternoon_prices = (afternoon_hours | sort)[:2] %}
+            {% set avg_lowest_afternoon_price = (lowest_afternoon_prices | sum) / 2 %}
+            {% set afternoon_price_with_loss = avg_lowest_afternoon_price * 1.2 %}
+            {% set avg_evening_price = (evening_hours | sum) / evening_hours | length %}
+            {{ afternoon_price_with_loss < avg_evening_price }}
+
+          is_afternoon_price_lower_than_late_evening: >
+            {% set next_day_total_prices_hourly = states('sensor.hsbo_price_tomorrow_total_hourly') | from_json | default([]) %}
+            {% set afternoon_hours = next_day_total_prices_hourly[10:17] %}
+            {% set late_evening_hours = next_day_total_prices_hourly[21:] %}
+            {% set lowest_afternoon_prices = (afternoon_hours | sort)[:2] %}
+            {% set avg_lowest_afternoon_price = (lowest_afternoon_prices | sum) / 2 %}
+            {% set afternoon_price_with_loss = avg_lowest_afternoon_price * 1.2 %}
+            {% set avg_late_evening_price = (late_evening_hours | sum) / late_evening_hours | length %}
+            {{ afternoon_price_with_loss < avg_late_evening_price }}
+
+      # Calculate charge strategy
+      - variables:
+          total_energy_need: "{{ energy_need_6am_10am + energy_need_10am_5pm + energy_need_5pm_9pm }}"
+          minimum_energy_need_for_battery: "{{ energy_need_6am_10am + energy_need_10am_5pm + energy_need_5pm_9pm }}"
+          usable_battery_capacity: "{{ battery_max_capacity - battery_min_capacity }}"
+          required_charge: "{{ [total_energy_need - current_battery_capacity + battery_min_capacity, 0] | max }}"
+          required_charge_adjusted: "{{ [required_charge, usable_battery_capacity] | min }}"
+          required_grid_charge: "{{ [required_charge_adjusted - total_charging_headroom, 0] | max | float(0) }}"
+          ac_charge_cutoff_percentage: "{{ ((required_grid_charge / battery_max_capacity * 100) + (battery_min_capacity / battery_max_capacity * 100)) | round(0) | float(0) }}"
+
+      # Determine final AC charge cutoff SOC and working mode
+      - variables:
+          ac_charge_cutoff_soc: >
+            {% if ac_charge_cutoff_percentage > 100 %}
+              100
+            {% elif ac_charge_cutoff_percentage < 20 %}
+              20
+            {% else %}
+              {{ ac_charge_cutoff_percentage | round(0) }}
+            {% endif %}
+          recommended_working_mode: >
+            {% set current_month = now().month %}
+            {% if current_month in [9, 10, 11, 12, 1, 2, 3, 4] or required_grid_charge > 0 %}
+              TOU
+            {% else %}
+              Maximise Self Consumption
+            {% endif %}
+
+      # Set the calculated values
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_required_grid_charging
+        data:
+          value: "{{ required_grid_charge }}"
+
+      - action: number.set_value
+        target:
+          entity_id: "{{ states('input_text.hsbo_batteries_grid_charge_cutoff_soc') }}"
+        data:
+          value: "{{ ac_charge_cutoff_soc }}"
+
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.hsbo_recommended_working_mode
+        data:
+          value: "{{ recommended_working_mode }}"
+
+      - action: script.hsbo_log_information
+        data:
+          level: "info"
+          component: "hsbo_calculate_next_day_charging"
+          message: |
+            {
+              "calculation_result": {
+                "total_charging_headroom": {{ total_charging_headroom }},
+                "required_grid_charging": {{ required_grid_charge }},
+                "ac_charge_cutoff_soc": {{ ac_charge_cutoff_soc }},
+                "recommended_working_mode": "{{ recommended_working_mode }}"
+              },
+              "calculation_details": {
+                "total_energy_need": {{ total_energy_need }},
+                "usable_battery_capacity": {{ usable_battery_capacity }},
+                "required_charge": {{ required_charge }},
+                "required_charge_adjusted": {{ required_charge_adjusted }},
+                "required_grid_charge": {{ required_grid_charge }},
+                "ac_charge_cutoff_percentage": {{ ac_charge_cutoff_percentage }}
+              }
+            }
+
+# Automations
+automation:
+  - id: hsbo_daily_battery_optimization
+    alias: "HSBO Daily Battery Optimization"
+    # This automation runs daily at 6:00 AM to perform the battery optimization analysis
+    # for the upcoming day. It calculates energy thresholds/pricing, analyzes hourly forecast data, and
+    # generates a summary of recommendations.
+    trigger:
+      - platform: time
+        at: "06:00:00"
+    action:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.hsbo_charge_start_time
+        data:
+          value: 0
+      - action: script.hsbo_calculate_energy_thresholds
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_daily_battery_optimization"
+          message: "HSBO: Executed Calculate Energy Threshold script at {{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+      - action: script.hsbo_analyze_hourly_data
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_daily_battery_optimization"
+          message: "HSBO: Executed Analyse Hourly Data script at {{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+      - action: script.hsbo_generate_summary
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_daily_battery_optimization"
+          message: "HSBO: Executed Generate Summary script at {{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  - id: hsbo_set_battery_charge_time
+    alias: "HSBO Set Battery Charge Date and Time"
+    description: "Set the exact date and time to start battery charging"
+    trigger:
+      - platform: time
+        at: "06:05:00"
+    action:
+      - choose:
+          - conditions:
+              - condition: numeric_state
+                entity_id: input_number.hsbo_charge_start_time
+                above: 0
+            sequence:
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: input_datetime.hsbo_battery_charge_datetime
+                data:
+                  datetime: "{{ states('sensor.hsbo_battery_charge_datetime') }}"
+              - action: script.hsbo_log_information
+                data:
+                  level: "info"
+                  component: "hsbo_set_battery_charge_time"
+                  message: >
+                    HSBO: Set battery charge date and time to {{ states('sensor.hsbo_battery_charge_datetime') }}.
+                    Current time: {{ now().strftime('%Y-%m-%d %H:%M:%S') }}
+        default:
+          - action: script.hsbo_log_event2
+            data:
+              level: "info"
+              component: "hsbo_set_battery_charge_time"
+              message: "HSBO: No specific charge start time set, staying with Default TOU settings"
+
+  - id: hsbo_calculate_next_day_charging_at_9_pm
+    alias: "HSBO Calculate Next Day Charging at 9 PM"
+    trigger:
+      - platform: time
+        at: "21:00:00"
+    action:
+      - action: script.turn_on
+        target:
+          entity_id: script.hsbo_calculate_next_day_charging
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_calculate_next_day_charging_at_9_pm"
+          message: "HSBO: Executed Calculate Next Day Charging script at {{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+    mode: single
+
+  - id: hsbo_comprehensive_daily_mode_management
+    alias: "HSBO Comprehensive Daily Mode Management"
+    trigger:
+      - platform: time
+        at: "14:30:00"
+        id: afternoon_battery_check
+      - platform: time_pattern
+        minutes: "/5"
+        id: regular_check
+      - platform: time
+        at: "00:00:01"
+        id: midnight_check
+      - platform: state
+        entity_id:
+          - binary_sensor.hsbo_negative_spot_price
+        to:
+        id: price_change
+        for:
+          hours: 0
+          minutes: 0
+          seconds: 10
+      - platform: state
+        entity_id:
+          - binary_sensor.hsbo_ev_charging
+        to: 'on'
+        id: ev_charging_start
+        for:
+          hours: 0
+          minutes: 0
+          seconds: 15
+      - platform: state
+        entity_id:
+          - binary_sensor.hsbo_ev_charging
+        to: 'off'
+        id: ev_charging_stop
+        for:
+          hours: 0
+          minutes: 2
+          seconds: 0
+    action:
+      - variables:
+          current_mode: "{{ states('input_text.hsbo_current_priority_mode') }}"
+          differential_ema: "{{ states('sensor.hsbo_differential_ema') }}"
+          battery_charge_datetime: "{{ states('input_datetime.hsbo_battery_charge_datetime') }}"
+          is_battery_charge_datetime_valid: >
+            {% set charge_datetime = strptime(states('input_datetime.hsbo_battery_charge_datetime'), '%Y-%m-%d %H:%M:%S') %}
+            {{ charge_datetime is not none and charge_datetime.date() == now().date() }}
+          current_month: "{{ now().month }}"
+          recommended_working_mode: "{{ states('input_text.hsbo_recommended_working_mode') }}"
+          spot_price: "{{ states(states('input_text.hsbo_energi_data_service_spot_price')) | float(0) }}"
+          inverter_entity: "{{ states('input_text.hsbo_inverter_active_power_control') }}"
+          current_export_state: "{{ states(inverter_entity) }}"
+          ev_charging: "{{ is_state('binary_sensor.hsbo_ev_charging', 'on') }}"
+          current_soc: "{{ states(states('input_text.hsbo_batteries_state_of_capacity')) | float(0) }}"
+      - choose:
+          # EV Charging Start: Set to TOU and Disable Battery Charging and Discharging
+          - conditions:
+              - condition: trigger
+                id: ev_charging_start
+            sequence:
+              - action: script.turn_on
+                target:
+                  entity_id: script.hsbo_set_working_mode_to_tou_and_disable_battery_charging_and_discharging
+              - action: script.hsbo_log_event2
+                data:
+                  level: "info"
+                  component: "hsbo_comprehensive_daily_mode_management"
+                  message: "HSBO: Changed to TOU with Disabled Battery Charging and Discharging due to EV charging start at {{ now().strftime('%H:%M:%S') }}"
+
+          # EV Charging Stop: Revert to recommended mode
+          - conditions:
+              - condition: trigger
+                id: ev_charging_stop
+            sequence:
+              - action: script.turn_on
+                target:
+                  entity_id: script.hsbo_set_working_mode_to_default_tou_periods
+              - action: script.hsbo_log_event2
+                data:
+                  level: "info"
+                  component: "hsbo_comprehensive_daily_mode_management"
+                  message: "HSBO: Reverted to Default TOU mode due to EV charging stop at {{ now().strftime('%H:%M:%S') }}"
+
+          # Afternoon Battery Check: Force charge if SoC is below 75%
+          - conditions:
+              - condition: trigger
+                id: afternoon_battery_check
+              - condition: template
+                value_template: "{{ current_soc < 75 }}"
+            sequence:
+              - service: script.hsbo_force_charge_battery
+                data:
+                  duration: 145  # Duration in minutes
+                  power: "5000"   # Power in watts
+              - service: script.hsbo_log_event2
+                data:
+                  level: "info"
+                  component: "hsbo_comprehensive_daily_mode_management"
+                  message: "Triggered force charge due to battery SoC below 75% at 2:30 pm"
+
+          # Midnight: Set mode based on evening calculation (only if not EV charging)
+          - conditions:
+              - condition: trigger
+                id: midnight_check
+              - condition: state
+                entity_id: binary_sensor.hsbo_ev_charging
+                state: 'off'
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ recommended_working_mode == 'TOU' and current_mode != 'default_tou' }}"
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_set_working_mode_to_default_tou_periods
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: Set to Default TOU Mode at midnight based on evening calculation"
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ recommended_working_mode == 'Maximise Self Consumption' and current_mode != 'maximise_self_consumption' }}"
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_set_working_mode_to_maximise_self_consumption
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: Set to Maximise Self Consumption at midnight based on evening calculation"
+                  - conditions:
+                    sequence:
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: changes in midnight check required at {{ now().strftime('%H:%M:%S') }}"
+
+          # Manage inverter export based on spot price
+          - conditions:
+              - condition: trigger
+                id: price_change
+              - condition: time
+                after: "07:00:00"
+                before: "20:00:00"
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: state
+                        entity_id: binary_sensor.hsbo_negative_spot_price
+                        state: 'on'
+                      - condition: template
+                        value_template: >
+                          {{ states(inverter_entity) != "Limited to 0.0%" }}
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_disable_grid_export
+                  - conditions:
+                      - condition: state
+                        entity_id: binary_sensor.hsbo_negative_spot_price
+                        state: 'off'
+                      - condition: template
+                        value_template: >
+                          {{ states(inverter_entity) != "Limited to 100.0%" }}
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_enable_grid_export
+                  - conditions:
+                    sequence:
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: changes in price check required at {{ now().strftime('%H:%M:%S') }}"
+
+          # Regular checks throughout the day (only if not EV charging)
+          - conditions:
+              - condition: trigger
+                id: regular_check
+              - condition: time
+                after: "06:00:00"
+                before: "23:59:59"
+              - condition: state
+                entity_id: binary_sensor.hsbo_ev_charging
+                state: 'off'
+            sequence:
+              - choose:
+                  # Between 6 AM and solar production <= house load
+                  - conditions:
+                      - condition: time
+                        before: "10:00:00"
+                      - condition: template
+                        value_template: "{{ differential_ema <= -200 }}"
+                      - condition: template
+                        value_template: "{{ current_mode != 'default_tou' }}"
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_set_working_mode_to_default_tou_periods
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: Changed to Default TOU mode at {{ now().strftime('%H:%M:%S') }} (Differential EMA: {{ differential_ema }} W)"
+
+                  # When solar production > house load, before optimal battery charge time
+                  - conditions:
+                      - condition: time
+                        before: "17:00:00"
+                      - condition: template
+                        value_template: >
+                          {% if is_battery_charge_datetime_valid %}
+                            {% set charge_start = strptime(battery_charge_datetime, '%Y-%m-%d %H:%M:%S') %}
+                            {{ differential_ema > 200 and
+                              now() | as_timestamp < charge_start | as_timestamp }}
+                          {% else %}
+                            false
+                          {% endif %}
+                      - condition: template
+                        value_template: "{{ current_mode != 'tou_battery_charge_disabled' }}"
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_set_morning_tou_mode_disable_battery_charge
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: Changed to TOU with battery charge disabled at {{ now().strftime('%H:%M:%S') }} (Differential EMA: {{ differential_ema }} W)"
+
+                  # At or after optimal battery charge time, but before 5 PM
+                  - conditions:
+                      - condition: time
+                        before: "17:00:00"
+                      - condition: template
+                        value_template: >
+                          {% if is_battery_charge_datetime_valid %}
+                            {% set charge_start = strptime(battery_charge_datetime, '%Y-%m-%d %H:%M:%S') %}
+                            {{ now() | as_timestamp >= charge_start | as_timestamp }}
+                          {% else %}
+                            false
+                          {% endif %}
+                      - condition: template
+                        value_template: "{{ current_mode != 'maximise_self_consumption' }}"
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_set_working_mode_to_maximise_self_consumption
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: Changed to Maximise Self Consumption at {{ now().strftime('%H:%M:%S') }} (Differential EMA: {{ differential_ema }} W)"
+
+                  # After 5 PM (Winter/Spring months: September to April)
+                  - conditions:
+                      - condition: time
+                        after: "17:00:00"
+                      - condition: template
+                        value_template: "{{ current_month in [9, 10, 11, 12, 1, 2, 3, 4] }}"
+                      - condition: template
+                        value_template: "{{ current_mode != 'default_tou' }}"
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_set_working_mode_to_default_tou_periods
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: Changed to Default TOU Mode (Winter/Spring months) at {{ now().strftime('%H:%M:%S') }} (Differential EMA: {{ differential_ema }} W)"
+
+                  # After 5 PM (Summer months: May to August)
+                  - conditions:
+                      - condition: time
+                        after: "17:00:00"
+                      - condition: template
+                        value_template: "{{ current_month in [5, 6, 7, 8] }}"
+                      - condition: template
+                        value_template: "{{ current_mode != 'maximise_self_consumption' }}"
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_set_working_mode_to_maximise_self_consumption
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: Changed to Maximise Self Consumption (Summer months) at {{ now().strftime('%H:%M:%S') }} (Differential EMA: {{ differential_ema }} W)"
+                  - conditions:
+                    sequence:
+                      - action: script.hsbo_log_event2
+                        data:
+                          level: "info"
+                          component: "hsbo_comprehensive_daily_mode_management"
+                          message: "HSBO: No changes in regular check required at {{ now().strftime('%H:%M:%S') }}"
+
+              # Check and manage inverter export during regular checks
+              - choose:
+                  - conditions:
+                      - condition: state
+                        entity_id: binary_sensor.hsbo_negative_spot_price
+                        state: 'on'
+                      - condition: template
+                        value_template: >
+                          {{ states(inverter_entity) != "Limited to 0.0%" }}
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_disable_grid_export
+                  - conditions:
+                      - condition: state
+                        entity_id: binary_sensor.hsbo_negative_spot_price
+                        state: 'off'
+                      - condition: template
+                        value_template: >
+                          {{ states(inverter_entity) != "Limited to 100.0%" }}
+                    sequence:
+                      - action: script.turn_on
+                        target:
+                          entity_id: script.hsbo_enable_grid_export
+        default:
+          - action: script.hsbo_log_event2
+            data:
+              level: "info"
+              component: "hsbo_comprehensive_daily_mode_management"
+              message: "HSBO: No changes required at {{ now().strftime('%H:%M:%S') }}"
+    trace:
+      stored_traces: 300
+    mode: single
+
+  - id: hsbo_force_battery_charge
+    alias: "HSBO Force Charge Battery"
+    trigger:
+      - platform: event
+        event_type: automation_triggered
+        event_data:
+          entity_id: automation.hsbo_force_charge_battery
+    condition: []
+    action:
+      - action: script.hsbo_force_charge_battery
+        data:
+          duration: 10  # Test duration in minutes
+          power: "5000"  # Test power in watts
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_force_battery_charge"
+          message: "HSBO: Forced Battery Charge at {{ now().strftime('%H:%M:%S') }}"
+
+    mode: single
+
+  - id: hsbo_stop_force_battery_charge
+    alias: "HSBO Stop Force Charge Battery"
+    trigger:
+      - platform: event
+        event_type: automation_triggered
+        event_data:
+          entity_id: automation.hsbo_stop_force_charge_battery
+    condition: []
+    action:
+      - action: script.hsbo_stop_force_charge_battery
+      - action: script.hsbo_log_event2
+        data:
+          level: "info"
+          component: "hsbo_stop_force_battery_charge"
+          message: "HSBO: Stopped Forced Battery Charge at {{ now().strftime('%H:%M:%S') }}"
+    mode: single
+
+  - id: hsbo_consumption_weight_validation
+    alias: "HSBO Consumption Weight Validation"
+    description: "Monitors and validates consumption prediction weights"
+    trigger:
+      - platform: state
+        entity_id:
+          - input_number.hsbo_consumption_weight_3d
+          - input_number.hsbo_consumption_weight_7d
+          - input_number.hsbo_consumption_weight_14d
+    condition:
+      - condition: template
+        value_template: >
+          {{ states('sensor.hsbo_weighted_consumption_validation').startswith('invalid') }}
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "HSBO Weight Configuration Error"
+          message: >
+            Consumption prediction weights do not sum to 100%:
+            3-day weight: {{ states('input_number.hsbo_consumption_weight_3d') }}%
+            7-day weight: {{ states('input_number.hsbo_consumption_weight_7d') }}%
+            14-day weight: {{ states('input_number.hsbo_consumption_weight_14d') }}%
+            Total: {{ state_attr('sensor.hsbo_weighted_consumption_validation', 'total_weight') }}%
+            
+            Please adjust the weights to sum to 100%.
+      - service: script.hsbo_log_information
+        data:
+          level: "warning"
+          component: "hsbo_consumption_weight_validation"
+          message: |
+            {
+              "validation_error": {
+                "total_weight": {{ state_attr('sensor.hsbo_weighted_consumption_validation', 'total_weight') }},
+                "weights": {
+                  "3d": {{ states('input_number.hsbo_consumption_weight_3d') }},
+                  "7d": {{ states('input_number.hsbo_consumption_weight_7d') }},
+                  "14d": {{ states('input_number.hsbo_consumption_weight_14d') }}
+                },
+                "issue": "{{ state_attr('sensor.hsbo_weighted_consumption_validation', 'issue') }}"
+              }
+            }
+
+# Sensors
+sensor:
+  - platform: template
+    sensors:
+      hsbo_optimization_summary:
+        friendly_name: "HSBO Battery Optimization Summary"
+        unique_id: hsbo_optimization_summary
+        # This sensor provides a summary of the daily optimization results, including
+        # potential grid selling, battery charging, and remaining charge levels.
+        value_template: >
+          Grid Selling: {{ states('input_number.hsbo_grid_selling') }} kWh,
+          Battery Charging: {{ states('input_number.hsbo_battery_charging') }} kWh,
+          Actual Remaining Charge: {{ states('input_number.hsbo_remaining_charge') }} kWh,
+          Simulated Remaining Charge: {{ states('input_number.hsbo_simulated_remaining_charge') }} kWh
+
+  - platform: template
+    sensors:
+      hsbo_battery_charge_datetime:
+        friendly_name: "HSBO Battery Charge Date and Time"
+        unique_id: hsbo_battery_charge_datetime
+        value_template: >
+          {% set target_hour = states('input_number.hsbo_charge_start_time') | int(0) %}
+          {% set now_time = now() %}
+          {% set target = now_time.replace(hour=target_hour, minute=0, second=0, microsecond=0) %}
+          {% if target <= now_time %}
+            {% set target = target + timedelta(days=1) %}
+          {% endif %}
+          {{ target.strftime('%Y-%m-%d %H:%M:%S') }}
+
+  # Intermediate template sensors
+  - platform: template
+    sensors:
+      hsbo_solar_production:
+        friendly_name: "HSBO Solar Production"
+        value_template: "{{ states(states('input_text.hsbo_solar_production_power')) | float(0) }}"
+        unit_of_measurement: "W"
+      hsbo_house_consumption:
+        friendly_name: "HSBO House Consumption"
+        value_template: "{{ states(states('input_text.hsbo_house_consumption_power')) | float(0) }}"
+        unit_of_measurement: "W"
+
+  # Smoothed Solar Production
+  - platform: filter
+    name: "HSBO Smoothed Solar Production"
+    unique_id: hsbo_smoothed_solar_production
+    entity_id: sensor.hsbo_solar_production
+    filters:
+      - filter: lowpass
+        time_constant: 10
+        precision: 2
+
+  # EMA Solar Production
+  - platform: statistics
+    name: "HSBO EMA Solar Production"
+    unique_id: hsbo_ema_solar_production
+    entity_id: sensor.hsbo_smoothed_solar_production
+    state_characteristic: mean
+    sampling_size: 20
+    max_age:
+      minutes: 5
+
+  # Smoothed House Load
+  - platform: filter
+    name: "HSBO Smoothed House Load"
+    unique_id: hsbo_smoothed_house_load
+    entity_id: sensor.hsbo_house_consumption
+    filters:
+      - filter: lowpass
+        time_constant: 10
+        precision: 2
+
+  # EMA House Load
+  - platform: statistics
+    name: "HSBO EMA House Load"
+    unique_id: hsbo_ema_house_load
+    entity_id: sensor.hsbo_smoothed_house_load
+    state_characteristic: mean
+    sampling_size: 20
+    max_age:
+      minutes: 5
+
+  # Differential EMA Sensor
+  - platform: template
+    sensors:
+      hsbo_differential_ema:
+        friendly_name: "HSBO Differential EMA"
+        unique_id: hsbo_differential_ema
+        unit_of_measurement: "W"
+        value_template: >
+          {%- set ema_solar_production = states('sensor.hsbo_ema_solar_production') %}
+          {%- set ema_house_load = states('sensor.hsbo_ema_house_load') %}
+          {%- set solar_production = states('sensor.hsbo_solar_production') | float(0) %}
+          {%- set house_load = states('sensor.hsbo_house_consumption') | float(0) %}
+          {%- if ema_solar_production | is_number and ema_house_load | is_number %}
+            {{ (ema_solar_production | float - ema_house_load | float) | round(0) }}
+          {% else %}
+            {{ (solar_production - house_load) | round(0) }}
+          {% endif %}

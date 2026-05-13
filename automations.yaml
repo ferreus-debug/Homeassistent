@@ -1,0 +1,1986 @@
+- id: '1715064624497'
+  alias: Varmepumpe_Turnoff
+  description: Sluk varmepumpe hvis strøm over 2.1 kwh, kontroller hver time
+  trigger:
+  - platform: time_pattern
+    minutes: '1'
+  condition:
+  - condition: numeric_state
+    entity_id: sensor.energi_data_service
+    above: 2.4
+  action:
+  - service: timer.pause
+    metadata: {}
+    data: {}
+    target:
+      entity_id: timer.varmepumpe_timer
+  - service: switch.turn_off
+    metadata: {}
+    data: {}
+    target:
+      entity_id: switch.poolpumpe_switch
+  - service: switch.turn_off
+    metadata: {}
+    data: {}
+    target:
+      entity_id: switch.zig_varmepumpe_switch
+  mode: single
+- id: '1715064708258'
+  alias: Varmepumpe_TurnOn
+  description: Tænd varmepumpe hvis strøm under 2,1 kW, kontroller hver time
+  trigger:
+  - platform: time_pattern
+    minutes: '2'
+  condition:
+  - condition: numeric_state
+    entity_id: sensor.energi_data_service
+    below: 2.4
+  action:
+  - service: timer.start
+    metadata: {}
+    data: {}
+    target:
+      entity_id: timer.varmepumpe_timer
+  - service: switch.turn_on
+    target:
+      entity_id:
+      - switch.zig_varmepumpe_switch
+    data: {}
+  - service: switch.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: switch.poolpumpe_switch
+  mode: single
+- id: '1715279416907'
+  alias: Reset Daily Energy Usage
+  description: ''
+  trigger:
+  - platform: time
+    at: 00:00:00
+  condition: []
+  action:
+  - service: homeassistant.update_entity
+    metadata: {}
+    data: {}
+    target:
+      entity_id: sensor.daily_pool_pump_energy_usage
+  mode: single
+- id: '1715685960815'
+  alias: Reset Varmepumpe Timer
+  description: Resets the varmepumpe timer every day at midnight.
+  trigger:
+  - platform: time
+    at: 00:00:00
+  action:
+  - service: timer.cancel
+    target:
+      entity_id: timer.varmepumpe_timer
+  - service: timer.start
+    target:
+      entity_id: timer.varmepumpe_timer
+- id: '1716398607592'
+  alias: Pool Pump Low Power Alert
+  description: Send a notification if pool pump power is under 300 watts for 10 minutes.
+  triggers:
+  - entity_id:
+    - sensor.shellypoolplug_switch_0_power
+    below: 300
+    for:
+      minutes: 10
+    trigger: numeric_state
+  conditions:
+  - condition: state
+    entity_id: switch.shellypoolplug_switch_0
+    state: 'on'
+  actions:
+  - action: notify.mobile_app_sm_s938b
+    data:
+      message: Pool power lav. Slukker pool
+  - action: switch.turn_off
+    metadata: {}
+    target:
+      entity_id: switch.shellypoolplug_switch_0
+    data: {}
+    enabled: true
+- id: '1718743030827'
+  alias: PoolPump_10Minutes
+  description: Tænd poolpumpe hver 10 minute
+  trigger:
+  - platform: time_pattern
+    minutes: /10
+  condition:
+  - condition: state
+    entity_id: timer.varmepumpe_timer
+    state: paused
+  action:
+  - service: switch.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: switch.poolpumpe_switch
+  - delay:
+      hours: 0
+      minutes: 2
+      seconds: 0
+      milliseconds: 0
+  - service: switch.turn_off
+    metadata: {}
+    data: {}
+    target:
+      entity_id: switch.poolpumpe_switch
+  mode: single
+- id: '1718914245254'
+  alias: PoolPumpe_CheapestHours
+  description: ''
+  trigger:
+  - platform: time_pattern
+    hours: /1
+  condition:
+  - condition: template
+    value_template: '{%- set cheapest_hours = state_attr(''sensor.billigste_5_timer'',
+      ''hours'') -%} {%- set current_hour = now().hour -%} {{ current_hour in cheapest_hours
+      }}'
+  - condition: numeric_state
+    entity_id: timer.poolpumpe
+    attribute: remaining
+    above: 0
+  action:
+  - service: logbook.log
+    data:
+      name: PoolPumpe_CheapestHours
+      message: Automation triggered
+      entity_id: automation.poolpumpe_cheapesthours
+  - service: switch.turn_on
+    target:
+      entity_id: switch.poolpumpe_switch
+    data: {}
+  - service: logbook.log
+    data:
+      name: PoolPumpe_CheapestHours
+      message: Switch turned on
+      entity_id: switch.poolpumpe_switch
+  - service: timer.start
+    data: {}
+    target:
+      entity_id: timer.poolpumpe
+  - service: logbook.log
+    data:
+      name: PoolPumpe_CheapestHours
+      message: Timer started
+      entity_id: timer.poolpumpe
+  - delay:
+      hours: 0
+      minutes: 59
+      seconds: 0
+      milliseconds: 0
+  - service: timer.pause
+    metadata: {}
+    data: {}
+    target:
+      entity_id: timer.poolpumpe
+  - service: logbook.log
+    data:
+      name: PoolPumpe_CheapestHours
+      message: Timer paused
+      entity_id: timer.poolpumpe
+  - service: switch.turn_off
+    metadata: {}
+    data: {}
+    target:
+      entity_id: switch.poolpumpe_switch
+  - service: logbook.log
+    data:
+      name: PoolPumpe_CheapestHours
+      message: Switch turned off
+      entity_id: switch.poolpumpe_switch
+  mode: single
+- id: '1718919669989'
+  alias: PoolLampe_On_Off
+  description: ''
+  trigger:
+  - platform: sun
+    event: sunrise
+  - platform: sun
+    event: sunset
+  condition: []
+  action:
+  - choose:
+    - conditions:
+      - condition: sun
+        after: sunset
+      sequence:
+      - service: light.turn_on
+        target:
+          entity_id: light.silja
+    - conditions:
+      - condition: sun
+        after: sunrise
+      sequence:
+      - service: light.turn_off
+        target:
+          entity_id: light.silja
+  mode: single
+- id: '1725782126648'
+  alias: Set Light Color Based on Power and Energy Sensors
+  description: Change light color based on sensor.power_difference and sensor.energi_data_service
+    values
+  trigger:
+  - platform: numeric_state
+    entity_id: sensor.power_difference
+    above: 2000
+    for: 00:05:00
+  - platform: numeric_state
+    entity_id: sensor.power_difference
+    above: 1000
+    for: 00:05:00
+  - platform: numeric_state
+    entity_id: sensor.power_difference
+    above: 500
+    for: 00:05:00
+  - platform: numeric_state
+    entity_id: sensor.power_difference
+    below: 0
+    for: 00:05:00
+  - platform: numeric_state
+    entity_id: sensor.energi_data_service
+    above: 2.4
+  - platform: numeric_state
+    entity_id: sensor.energi_data_service
+    below: 2.4
+  - platform: numeric_state
+    entity_id: sensor.energi_data_service
+    below: 1.5
+  condition: []
+  action:
+  - target:
+      device_id: d8259af89a13a6a3ee5e45e4380de34a
+    data:
+      color_name: "{% set power_diff = states('sensor.power_difference') %} {% set
+        energi_service = states('sensor.energi_data_service') %} {% if energi_service
+        not in ['unknown', 'unavailable', 'none'] %}\n  {% set energi_service = energi_service
+        | float %}\n  {% if energi_service > 2.4 %}\n    red\n  {% elif energi_service
+        < 1.5 %}\n    blue\n  {% else %}\n    green\n  {% endif %}\n{% elif power_diff
+        not in ['unknown', 'unavailable', 'none'] %}\n  {% set power_diff = power_diff
+        | float %}\n  {% if power_diff > 2000 %}\n    blue\n  {% elif power_diff >
+        1000 %}\n    yellow\n  {% elif power_diff > 500 %}\n    green\n  {% elif power_diff
+        < 0 %}\n    red\n  {% else %}\n    white\n  {% endif %}\n{% else %}\n  white\n{%
+        endif %}\n"
+    action: light.turn_on
+  - data:
+      name: Power and Energy Difference Log
+      message: 'Power difference is: {{ states(''sensor.power_difference'') }}, Energy
+        data service is: {{ states(''sensor.energi_data_service'') }}'
+      entity_id: sensor.power_difference
+    action: logbook.log
+  mode: single
+- id: '1725788456243'
+  alias: CheckBathRoomHumidity
+  description: ''
+  trigger:
+  - platform: numeric_state
+    entity_id:
+    - sensor.bathsensorhum_humidity
+    for:
+      hours: 0
+      minutes: 5
+      seconds: 0
+    above: 60
+  condition: []
+  action:
+  - action: notify.mobile_app_sm_s908b
+    metadata: {}
+    data:
+      message: Udluftning badeværelse
+      title: Luftfugtighed for høj
+  - action: notify.mobile_app_stina
+    data: {}
+  mode: single
+- id: '1725790271291'
+  alias: DagligstueCheckHumidity
+  description: ''
+  trigger:
+  - platform: numeric_state
+    entity_id:
+    - sensor.dagligstuehumtemp_humidity
+    for:
+      hours: 0
+      minutes: 5
+      seconds: 0
+    above: 60
+  condition: []
+  action:
+  - action: notify.mobile_app_sm_s908b
+    metadata: {}
+    data:
+      title: Udluftning af stue
+      message: Luftfugtighed er over 60%
+  - action: notify.mobile_app_stina
+    data:
+      title: Luftfugtighed er over 60%
+      message: Udluftning af stue
+  mode: single
+- id: '1729769495605'
+  alias: CheckSiljaCheckout
+  description: ''
+  triggers:
+  - entity_id: sensor.ny_vest_nordskovskolen_silja
+    attribute: checkOutTime
+    trigger: state
+  conditions:
+  - condition: time
+    after: 08:00:00
+    before: '17:00:00'
+  - condition: template
+    value_template: "{{ (state_attr('automation.checksiljacheckout', 'last_triggered')
+      == none) or\n   (now().date() != as_datetime(state_attr('automation.checksiljacheckout',
+      'last_triggered')).date()) }}\n"
+  actions:
+  - data:
+      title: Silja på vej hjem
+      message: Silja på vej hjem
+    action: notify.mobile_app_sm_s908b
+  mode: single
+- id: '1731495939185'
+  alias: Turn Off Climate During Expensive Hours
+  description: ''
+  triggers:
+  - at: 00:00:00
+    trigger: time
+  - hours: /1
+    trigger: time_pattern
+  conditions:
+  - condition: template
+    value_template: '{% set expensive_hours = state_attr(''sensor.dyreste_5_timer'',
+      ''hours'') %} {{ expensive_hours is not none and now().hour in expensive_hours
+      }}
+
+      '
+  actions:
+  - data:
+      name: Expensive Hours Check
+      message: '{% set expensive_hours = state_attr(''sensor.dyreste_5_timer'', ''hours'')
+        %} Expensive hours: {{ expensive_hours if expensive_hours is not none else
+        ''Unavailable'' }}; Current hour: {{ now().hour }}; Match found: {{ expensive_hours
+        is not none and now().hour in expensive_hours }}
+
+        '
+    action: logbook.log
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{% set expensive_hours = state_attr(''sensor.dyreste_5_timer'',
+          ''hours'') %} {{ expensive_hours is not none and now().hour in expensive_hours
+          }}
+
+          '
+      sequence:
+      - target:
+          device_id: 744f253394dafcf728db8d2da5076b68
+        data: {}
+        action: climate.turn_off
+      - delay:
+          hours: 0
+          minutes: 58
+          seconds: 0
+          milliseconds: 0
+      - data:
+          name: Climate Control
+          message: Turning on climate after delay
+        action: logbook.log
+      - target:
+          device_id: 744f253394dafcf728db8d2da5076b68
+        action: climate.turn_on
+    default: []
+  mode: single
+- id: '1732486673198'
+  alias: Optimize Floor Heating by Energy Price and Temperature
+  description: Adjust floor heating temperature based on energy price and air temperature.
+  triggers:
+  - entity_id: sensor.energi_data_service
+    trigger: state
+  - entity_id: sensor.floor_thermostat_air_temperature
+    below: 23
+    trigger: numeric_state
+  - trigger: time_pattern
+    hours: /1
+  - entity_id: switch.monta_spangsberg_start_stop
+    trigger: state
+  conditions: []
+  actions:
+  - variables:
+      cheap_now: '{{ is_state(''binary_sensor.energy_cheap_now'',''on'') }}'
+      sun_soon: '{{ is_state(''binary_sensor.pv_excess_soon'',''on'') }}'
+      expensive_now: '{{ is_state(''binary_sensor.energy_expensive_now'',''on'') }}'
+      silja_room_temp: '{{ states(''sensor.siljasonoff_temperature'') }}'
+      maja_room_temp: '{{ states(''sensor.maajatempsonoff_temperature'') }}'
+      stue_temp: '{{ states(''sensor.floor_thermostat_air_temperature'')}}'
+      kitchen_temp: '{{ states(''sensor.kokkengulvvarme_air_temperature_2'')}}'
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: switch.monta_spangsberg_start_stop
+        state: 'on'
+      - condition: time
+        after: 09:00:00
+        before: '16:00:00'
+      sequence:
+      - target:
+          device_id: 0e1f4f7c53dd2c7279efceae52f0dd29
+        data:
+          hvac_mode: 'off'
+          temperature: 23
+        action: climate.set_temperature
+      - target:
+          device_id: ef4b1ce17fe24c7993edc88c3acb74d9
+        data:
+          hvac_mode: 'off'
+          temperature: 22
+        action: climate.set_temperature
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.dagligstuehumtemp_temperature
+        below: 22
+      sequence:
+      - action: climate.set_temperature
+        metadata: {}
+        data:
+          temperature: 30
+          hvac_mode: heat
+        target:
+          device_id: 0e1f4f7c53dd2c7279efceae52f0dd29
+      - action: climate.set_temperature
+        metadata: {}
+        data:
+          hvac_mode: heat
+          temperature: 30
+        target:
+          device_id: ef4b1ce17fe24c7993edc88c3acb74d9
+    - conditions:
+      - condition: template
+        value_template: '{% set hours = state_attr(''sensor.billigste_4_timer_i_dag_unikke_timer'',''hours'')
+          or [] %} {{ now().strftime(''%H'') in hours }}'
+      sequence:
+      - target:
+          device_id: 0e1f4f7c53dd2c7279efceae52f0dd29
+        data:
+          temperature: 25
+          hvac_mode: heat
+        action: climate.set_temperature
+      - target:
+          device_id: ef4b1ce17fe24c7993edc88c3acb74d9
+        data:
+          temperature: 25
+          hvac_mode: heat
+        action: climate.set_temperature
+    - conditions:
+      - condition: template
+        value_template: '{{ expensive_now }}
+
+          '
+      sequence:
+      - target:
+          device_id: 0e1f4f7c53dd2c7279efceae52f0dd29
+        data:
+          temperature: 22
+          hvac_mode: heat
+        action: climate.set_temperature
+      - target:
+          device_id: ef4b1ce17fe24c7993edc88c3acb74d9
+        data:
+          temperature: 20
+          hvac_mode: heat
+        action: climate.set_temperature
+    - conditions:
+      - condition: template
+        value_template: '{{ cheap_now or stue_temp < 23}}'
+      - condition: time
+        after: 08:00:00
+        before: '20:00:00'
+        enabled: false
+      sequence:
+      - target:
+          device_id: 0e1f4f7c53dd2c7279efceae52f0dd29
+        data:
+          temperature: 25
+          hvac_mode: heat
+        action: climate.set_temperature
+      - target:
+          device_id: ef4b1ce17fe24c7993edc88c3acb74d9
+        data:
+          temperature: 25
+          hvac_mode: heat
+        action: climate.set_temperature
+    - conditions:
+      - condition: template
+        value_template: '{{expensive_now}}'
+      sequence:
+      - target:
+          device_id: 0e1f4f7c53dd2c7279efceae52f0dd29
+        data:
+          temperature: 18
+          hvac_mode: 'off'
+        action: climate.set_temperature
+      - target:
+          device_id: ef4b1ce17fe24c7993edc88c3acb74d9
+        data:
+          temperature: 18
+          hvac_mode: 'off'
+        action: climate.set_temperature
+    default:
+    - action: climate.set_temperature
+      metadata: {}
+      data:
+        temperature: 26
+        hvac_mode: heat
+      target:
+        device_id: 744f253394dafcf728db8d2da5076b68
+    - action: climate.set_temperature
+      metadata: {}
+      target:
+        device_id: 0e1f4f7c53dd2c7279efceae52f0dd29
+      data:
+        temperature: 23
+        hvac_mode: heat
+    - action: climate.set_temperature
+      metadata: {}
+      target:
+        device_id: ef4b1ce17fe24c7993edc88c3acb74d9
+      data:
+        temperature: 23
+        hvac_mode: heat
+  mode: single
+- id: '1735911334642'
+  alias: TODOIST-AddWeeklyTasks
+  description: Adds weekly tasks to Todoist every Sunday at 23:00.
+  triggers:
+  - at: '23:00:00'
+    trigger: time
+  conditions:
+  - condition: time
+    weekday:
+    - sun
+  actions:
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Støvsugning
+      due_string: next Saturday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Vask gulvet
+      due_string: next Saturday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Rengøring af badeværelse
+      due_string: next Saturday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Aftørring af støv
+      due_string: next Saturday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Vasketøj
+      due_string: next Sunday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Gør pigernes ting klar til næste uge
+      due_string: next Sunday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Lav Madplan og køb ind
+      due_string: next Sunday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  mode: single
+- id: '1736089097013'
+  alias: TODOIst-AddBiWeeklyTask
+  description: ''
+  triggers: []
+  conditions: []
+  actions:
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Vande planter
+      due_string: next Sunday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  mode: single
+- id: '1736089343702'
+  alias: Todoist-Montly tasks
+  description: ''
+  triggers: []
+  conditions: []
+  actions:
+  - action: rest_command.add_todoist_task
+    metadata: {}
+    data:
+      content: Rense emhætte
+      due_string: next Sunday
+      due_lang: en
+      priority: 4
+    response_variable: restfulresponse
+  mode: single
+- id: '1738079401410'
+  alias: Reset Optimize rules daily
+  description: ''
+  triggers:
+  - trigger: time_pattern
+    hours: '0'
+  conditions: []
+  actions:
+  - action: automation.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: automation.optimize_floor_heating_by_energy_price
+  mode: single
+- id: '1742216259625'
+  alias: Start NiceHash Mining Based on Solar Conditions
+  description: Starts mining when conditions are ideal, stops after 30 minutes.
+  triggers:
+  - entity_id:
+    - sensor.inverter_pv_power
+    trigger: state
+  conditions:
+  - condition: numeric_state
+    entity_id: sensor.batteries_state_of_capacity
+    above: 95
+  - condition: template
+    value_template: '{% set house = states(''sensor.house_consumption_power'') | int(0)
+      %} {% set solar = states(''sensor.inverter_pv_power'') | int(0) %} {{ solar
+      - house >= 1000 }}
+
+      '
+  actions:
+  - action: shell_command.nicehash_start_rigs
+  - delay: 00:30:00
+  - action: shell_command.nicehash_stop_rigs
+  mode: single
+- id: '1742682508145'
+  alias: Notify Overdue Todoist Tasks
+  description: ''
+  triggers:
+  - trigger: time_pattern
+    minutes: /5
+  conditions:
+  - condition: template
+    value_template: "{% set end = as_datetime(state_attr('calendar.opgaver', 'end_time'))
+      %} {% if end is not none %}\n  {{ end < now() }}\n{% else %}\n  false\n{% endif
+      %}\n"
+  actions:
+  - data:
+      message: 'You have an overdue task: {{ state_attr(''calendar.opgaver'', ''message'')
+        }}'
+    action: notify.mobile_app_sm_s908b
+  mode: single
+- id: '1743004575647'
+  alias: Start varmepumpe og poolpumpe efter betingelser (robust)
+  description: 'Robust version: Starter pumper ved overskudsproduktion, manglende
+    drift eller om natten.
+
+    '
+  triggers:
+  - entity_id: sensor.inverter_pv_power
+    id: overskud
+    trigger: state
+  - minutes: 0
+    id: minimumsdrift
+    trigger: time_pattern
+  - at: 00:00:00
+    id: natdrift
+    trigger: time
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ trigger.id == ''overskud'' }}'
+      - condition: template
+        value_template: "{{ states('sensor.inverter_pv_power') not in ['unavailable',
+          'unknown'] and\n   states('sensor.house_consumption_power') not in ['unavailable',
+          'unknown'] }}\n"
+      - condition: numeric_state
+        entity_id: sensor.inverter_pv_power
+        above: 1000
+      - condition: template
+        value_template: "{{ (states('sensor.inverter_pv_power') | float(0)) -\n   (states('sensor.house_consumption_power')
+          | float(0)) > 1500 }}\n"
+      - condition: state
+        entity_id: switch.shellyplus1varmepumpe_switch_0
+        state: 'off'
+      - condition: state
+        entity_id: switch.shellypoolplug_switch_0
+        state: 'off'
+      sequence:
+      - target:
+          entity_id:
+          - switch.shellyplus1varmepumpe_switch_0
+          - switch.shellypoolplug_switch_0
+        action: switch.turn_on
+      - target:
+          entity_id: timer.poolpumpe_timer
+        action: timer.cancel
+      - target:
+          entity_id: timer.poolpumpe_timer
+        action: timer.start
+      - data:
+          name: Pumper
+          message: Varmepumpe og poolpumpe blev startet pga. overskudsproduktion
+          entity_id: switch.shellyplus1varmepumpe_switch_0
+        action: logbook.log
+      - delay: 00:30:00
+      - target:
+          entity_id:
+          - switch.shellyplus1varmepumpe_switch_0
+          - switch.shellypoolplug_switch_0
+        action: switch.turn_off
+      - target:
+          entity_id: timer.poolpumpe_timer
+        action: timer.pause
+      - data:
+          name: Pumper
+          message: Varmepumpe og poolpumpe blev slukket efter 30 minutter
+          entity_id: switch.shellyplus1varmepumpe_switch_0
+        action: logbook.log
+    - conditions:
+      - condition: template
+        value_template: '{{ trigger.id == ''minimumsdrift'' }}'
+      - condition: time
+        after: '11:00:00'
+      - condition: template
+        value_template: '{{ (state_attr(''timer.poolpumpe_timer'', ''remaining'')
+          | default(0) | as_timedelta).total_seconds() / 3600 < 6 }}
+
+          '
+      - condition: state
+        entity_id: switch.shellyplus1varmepumpe_switch_0
+        state: 'off'
+      - condition: state
+        entity_id: switch.shellypoolplug_switch_0
+        state: 'off'
+      sequence:
+      - target:
+          entity_id:
+          - switch.shellyplus1varmepumpe_switch_0
+          - switch.shellypoolplug_switch_0
+        action: switch.turn_on
+      - target:
+          entity_id: timer.poolpumpe_timer
+        action: timer.cancel
+      - target:
+          entity_id: timer.poolpumpe_timer
+        action: timer.start
+      - data:
+          name: Minimumsdrift
+          message: 'Varmepumpe og poolpumpe blev startet efter kl. 11 pga. < 6 timers
+            drift
+
+            '
+          entity_id: switch.shellyplus1varmepumpe_switch_0
+        action: logbook.log
+    - conditions:
+      - condition: template
+        value_template: '{{ trigger.id == ''natdrift'' }}'
+      - condition: time
+        after: 00:00:00
+        before: 05:00:00
+      - condition: state
+        entity_id: switch.shellyplus1varmepumpe_switch_0
+        state: 'off'
+      - condition: state
+        entity_id: switch.shellypoolplug_switch_0
+        state: 'off'
+      sequence:
+      - target:
+          entity_id:
+          - switch.shellyplus1varmepumpe_switch_0
+          - switch.shellypoolplug_switch_0
+        action: switch.turn_on
+      - target:
+          entity_id: timer.poolpumpe_timer
+        action: timer.cancel
+      - target:
+          entity_id: timer.poolpumpe_timer
+        action: timer.start
+      - data:
+          name: Pumper
+          message: Varmepumpe og poolpumpe blev startet mellem 00:00 og 05:00
+          entity_id: switch.shellyplus1varmepumpe_switch_0
+        action: logbook.log
+      - delay: 00:30:00
+      - target:
+          entity_id:
+          - switch.shellyplus1varmepumpe_switch_0
+          - switch.shellypoolplug_switch_0
+        action: switch.turn_off
+      - target:
+          entity_id: timer.poolpumpe_timer
+        action: timer.pause
+      - data:
+          name: Pumper
+          message: Varmepumpe og poolpumpe blev slukket efter 30 minutter
+          entity_id: switch.shellyplus1varmepumpe_switch_0
+        action: logbook.log
+    default:
+    - data:
+        name: Scriptfejl
+        message: Ingen betingelser opfyldt for pumperne
+      action: logbook.log
+  mode: restart
+- id: '1747171632424'
+  alias: Intelligent eksport - aktiver ved sensor ON
+  description: Aktiverer eksport fra batteri når de definerede betingelser er opfyldt
+  triggers:
+  - trigger: time_pattern
+    minutes: '5'
+  actions:
+  - data:
+      device_id: a27b89407bbdf3e1b22612e06c361a74
+      power_percentage: 100
+    action: huawei_solar.set_maximum_feed_grid_power_percent
+  - data:
+      name: Huawei Inverter
+      message: Eksport aktiveret – sensor blev ON
+      entity_id: binary_sensor.huawei_zero_export_active
+    action: logbook.log
+  mode: single
+- id: '1747171705876'
+  alias: Intelligent eksport - stop ved sensor OFF
+  description: Stopper eksport fra batteri når betingelser ikke længere er opfyldt
+  triggers:
+  - entity_id: binary_sensor.skal_eksportere_fra_batteri
+    to: 'off'
+    trigger: state
+  actions:
+  - data:
+      device_id: a27b89407bbdf3e1b22612e06c361a74
+      power_percentage: 0
+    action: huawei_solar.set_maximum_feed_grid_power_percent
+  - data:
+      name: Huawei Inverter
+      message: Eksport stoppet – sensor blev OFF
+      entity_id: binary_sensor.huawei_zero_export_active
+    action: logbook.log
+  mode: single
+- id: '1750111818502'
+  alias: PoolPumpeVarmePumpe_TurnOn_8
+  description: ''
+  triggers:
+  - trigger: time
+    at: 08:00:00
+  conditions: []
+  actions:
+  - action: switch.turn_on
+    metadata: {}
+    data: {}
+    target:
+      device_id:
+      - 2c6f40d3e932d83d6d1f3090b40e846d
+      - 6544cf3b71dbe3e417891263861545e0
+  mode: single
+- id: '1750111893145'
+  alias: 'PoolPumpeVarmePumpe_TurnOff_17 '
+  description: ''
+  triggers:
+  - trigger: time
+    at: '17:00:00'
+  conditions: []
+  actions:
+  - action: switch.turn_off
+    metadata: {}
+    data: {}
+    target:
+      device_id:
+      - 2c6f40d3e932d83d6d1f3090b40e846d
+      - 6544cf3b71dbe3e417891263861545e0
+  mode: single
+- id: '1751272701413'
+  alias: Intelligent eksport – styr alt
+  triggers:
+  - entity_id: binary_sensor.skal_eksportere_fra_batteri
+    trigger: state
+  actions:
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: binary_sensor.skal_eksportere_fra_batteri
+        state: 'on'
+      sequence:
+      - data:
+          power: 100
+        action: script.set_export_limit
+      - data:
+          name: Eksport-sensor debug
+          message: 'ON | SolOK={{ state_attr(''binary_sensor.skal_eksportere_fra_batteri'',''cond_sol_ok'')
+            }} PrisOK={{ state_attr(''binary_sensor.skal_eksportere_fra_batteri'',''cond_price_ok'')
+            }} SOCOK={{ state_attr(''binary_sensor.skal_eksportere_fra_batteri'',''cond_soc_ok'')
+            }} SOC>SolPct={{ state_attr(''binary_sensor.skal_eksportere_fra_batteri'',''cond_soc_vs_sol_ok'')
+            }}
+
+            '
+        action: logbook.log
+    - conditions:
+      - condition: state
+        entity_id: binary_sensor.skal_eksportere_fra_batteri
+        state: 'off'
+      sequence:
+      - data:
+          power: 0
+        action: script.set_export_limit
+      - data:
+          name: Eksport-sensor debug
+          message: 'OFF | SolOK={{ state_attr(''binary_sensor.skal_eksportere_fra_batteri'',''cond_sol_ok'')
+            }} PrisOK={{ state_attr(''binary_sensor.skal_eksportere_fra_batteri'',''cond_price_ok'')
+            }} SOCOK={{ state_attr(''binary_sensor.skal_eksportere_fra_batteri'',''cond_soc_ok'')
+            }} SOC>SolPct={{ state_attr(''binary_sensor.skal_eksportere_fra_batteri'',''cond_soc_vs_sol_ok'')
+            }}
+
+            '
+        action: logbook.log
+  mode: single
+- id: '1754047962863'
+  alias: Car charging - night backup START
+  description: ''
+  triggers:
+  - trigger: time
+    at: 00:15:00
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.should_charge_car_at_night
+    state: 'on'
+  actions:
+  - action: button.press
+    metadata: {}
+    target:
+      entity_id: button.rugvaenget13_authorize_charging
+    data: {}
+  - target:
+      entity_id: switch.monta_spangsberg_start_stop
+    action: switch.turn_on
+    data: {}
+  - data:
+      name: Car Charging (Night)
+      message: Night backup started - SOC below 60%
+    action: logbook.log
+  - action: number.set_value
+    metadata: {}
+    target:
+      entity_id: number.rugvaenget13_charger_max_current
+    data:
+      value: '32'
+  mode: single
+- id: '1754048715840'
+  alias: Car charging - night backup STOP
+  description: Stop charging at 06:00 to end night backup
+  triggers:
+  - trigger: time
+    at: 06:00:00
+  - trigger: state
+    entity_id:
+    - binary_sensor.should_charge_car
+    from:
+    - 'on'
+    - 'off'
+  conditions:
+  actions:
+  - action: switch.turn_off
+    data: {}
+    target:
+      entity_id: switch.rugvaenget13_charging
+  - action: logbook.log
+    metadata: {}
+    data:
+      name: ' Car Charging (Night)'
+      message: Night backup stopped - time limit reached
+  mode: single
+- id: '1758624798706'
+  alias: Battery - targets, peak, export_Migrated
+  description: ''
+  triggers:
+  - entity_id: input_boolean.huawei_force_control
+    to: 'on'
+    trigger: state
+  - entity_id:
+    - sensor.batteries_state_of_capacity
+    - binary_sensor.energy_cheap_now
+    - binary_sensor.energy_expensive_now
+    - binary_sensor.pv_excess_soon
+    - switch.rugvaenget13_charging
+    trigger: state
+  - value_template: "{{ is_state('input_boolean.huawei_force_control','on')\n   and
+      states('sensor.time') in ['00:00','06:00','09:00','11:00','13:00','15:00','16:00','17:00','21:00']
+      }}\n"
+    trigger: template
+  conditions:
+  - condition: state
+    entity_id: input_boolean.huawei_force_control
+    state: 'on'
+  actions:
+  - variables:
+      vacation_mode: '{{ is_state(''input_boolean.vacation_mode'',''off'') }}'
+      expensive_export_price: '{{states(''input_number.expensive_export_price'') |
+        float(0)}}'
+      current_power_price_hr: '{{state_attr(''sensor.energi_data_service'',''current_price'')|float(0)}}'
+      soc: '{{ states(''sensor.batteries_state_of_capacity'')|float(0) }}'
+      cheap_now: '{{ is_state(''binary_sensor.energy_cheap_now'',''on'') }}'
+      expensive_now: '{{ is_state(''binary_sensor.energy_expensive_now'',''on'') }}'
+      pv_good: '{{ is_state(''binary_sensor.pv_excess_soon'',''on'') }}'
+      hour: '{{ now().hour }}'
+      day_target: '{{ states(''input_number.target_soc_day'')|float(95) }}'
+      night_target: '{{ states(''input_number.target_soc_night'')|float(10) }}'
+      allow_export: '{{ is_state(''input_boolean.allow_export'',''on'') }}'
+      export_min_soc: '{{ states(''input_number.export_min_soc'')|float(60) }}'
+      ev_charging: '{{ is_state(''switch.rugvaenget13_charging'',''on'') }}'
+      export_price: '{{ states(''sensor.energidataservice_export'')|float(0) }}'
+      forecast_tomorrow: '{{states(''sensor.solcast_pv_forecast_forecast_tomorrow'')|float(0)
+        }}'
+      forecast_today: '{{states(''sensor.solcast_pv_forecast_forecast_today'')|float(0)
+        }}'
+      forecast_remaining_today: '{{states(''sensor.solcast_pv_forecast_forecast_remaining_today'')|float(0)
+        }}'
+      dynamic_power: "{{ states('sensor.inverter_pv_power') | float -\n   states('sensor.house_consumption_power')
+        | float }}      \n"
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: input_boolean.vacation_mode
+        state: 'on'
+      - condition: template
+        value_template: '{{ vacation_mode and soc > 5 and export_price > 0}}'
+      sequence:
+      - action: script.set_battery_working_mode
+        metadata: {}
+        data:
+          power: 100
+      - action: script.huawei_export_unlimited
+        metadata: {}
+        data: {}
+    - conditions:
+      - condition: template
+        value_template: '{% set hours = state_attr(''sensor.billigste_4_timer_i_dag_unikke_timer'',''hours'')
+          or [] %} {{ now().strftime(''%H'') in hours }}'
+      sequence:
+      - action: script.huawei_force_charge_to_target_soc_param_migrated
+        data:
+          target_soc: '{{ night_target | int }}'
+          power: 5000
+      - action: number.set_value
+        metadata: {}
+        data:
+          value: '300'
+        target:
+          entity_id: number.batteries_maximum_discharging_power
+    - conditions:
+      - condition: template
+        value_template: '{{ export_price > 0 and current_power_price_hr > expensive_export_price
+          and soc > 15}}'
+      sequence:
+      - action: script.huawei_export_unlimited
+        metadata: {}
+        data: {}
+      - action: script.set_battery_working_mode
+        metadata: {}
+        data:
+          power: 30
+    - conditions:
+      - condition: template
+        value_template: '{{ export_price < 0 and hour < 15 }}'
+      sequence:
+      - action: script.huawei_export_limit_w
+        data:
+          power: 0
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+      - condition: state
+        entity_id: input_boolean.energy_debug
+        state: 'on'
+      - action: logbook.log
+        data:
+          name: Energy Manager
+          message: Export blocked (negative export price).
+    - conditions:
+      - condition: template
+        value_template: '{{ ev_charging }}'
+      sequence:
+      - action: script.huawei_export_limit_w
+        data:
+          power: 0
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+    - conditions:
+      - condition: template
+        value_template: "{{ soc < 10\n   and forecast_tomorrow < 15\n   and cheap_now\n
+          \  and hour >= 0\n   and hour < 6\n   and soc < night_target\n   and forecast_today
+          <= 10 }}"
+      sequence:
+      - action: script.huawei_force_charge_to_target_soc_param_migrated
+        data:
+          target_soc: '{{ night_target | int }}'
+          power: 5000
+    - conditions:
+      - condition: template
+        value_template: "{{ soc < 10\n   and forecast_tomorrow < 15\n   and 13 <=
+          hour <= 16\n   and soc < day_target }}"
+      sequence:
+      - action: script.huawei_force_charge_to_target_soc_param_migrated
+        data:
+          target_soc: '{{ day_target | int }}'
+          power: 5000
+    - conditions:
+      - condition: template
+        value_template: '{{ 15 <= hour < 17 and not ev_charging and export_price >=
+          0 and soc > day_target}}'
+      sequence:
+      - action: script.huawei_export_unlimited
+        data: {}
+      - action: script.huawei_force_discharge_to_soc
+        data:
+          target_soc: '{{ day_target | int }}'
+      - action: script.set_battery_working_mode
+        data:
+          power: 10
+    - conditions:
+      - condition: template
+        value_template: '{{ allow_export and expensive_now and soc >= export_min_soc
+          and not ev_charging and pv_good and export_price >= 0 }}'
+      sequence:
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+    default:
+    - action: script.set_battery_working_mode
+      data:
+        power: 0
+    - action: number.set_value
+      metadata: {}
+      data:
+        value: '5000'
+      target:
+        entity_id: number.batteries_maximum_discharging_power
+  mode: restart
+- id: '1758631084115'
+  alias: Battery - Morning opportunity export (06-10 if 11 remaining is high)_MIGRATED
+  description: ''
+  triggers:
+  - minutes: /5
+    trigger: time_pattern
+  conditions:
+  - condition: state
+    entity_id: input_boolean.huawei_force_control
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.morning_sell_enable
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.allow_export
+    state: 'on'
+  - condition: time
+    after: 06:00:00
+    before: '11:00:00'
+  actions:
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: "{{ export_price >= 0\n   and pv_remaining >= pv_need\n   and
+          (soc >= export_min_soc or pv_remaining >= pv_override_kwh)\n   and not ev_charging
+          }}\n"
+      sequence:
+      - action: script.huawei_export_unlimited
+        data: {}
+      - action: script.huawei_force_discharge_to_soc
+        data: {}
+      - action: script.set_battery_working_mode
+        data:
+          power: 100
+      - action: logbook.log
+        data:
+          name: Energy Manager
+          message: "Morning export ACTIVE (reason: {{\n  'SOC≥min' if soc >= export_min_soc
+            else\n  'PV≥%s kWh override'|format(pv_override_kwh)\n}}). Exporting down
+            to {{ export_min_soc|int }}%. PV remaining {{ pv_remaining }} kWh (need
+            ≥ {{ pv_need }} kWh), export price {{ export_price }}.\n"
+    - conditions:
+      - condition: template
+        value_template: "{{ (export_price < 0)\n   or (pv_remaining < pv_need)\n   or
+          ((soc < export_min_soc) and (pv_remaining < pv_override_kwh))\n   or ev_charging
+          }}\n"
+      sequence:
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+      - choose:
+        - conditions:
+          - condition: template
+            value_template: '{{ export_price < 0 }}'
+          sequence:
+          - action: script.huawei_export_limit_w
+            data:
+              power: 0
+          - action: logbook.log
+            data:
+              name: Energy Manager
+              message: 'Morning export STOPPED due to negative export price. PV remaining
+                {{ pv_remaining }} kWh, export price {{ export_price }}.
+
+                '
+        default:
+        - action: logbook.log
+          data:
+            name: Energy Manager
+            message: "Morning export NOT ACTIVE. Reasons may include: PV remaining
+              < need ({{ pv_remaining }} < {{ pv_need }}), or both SOC < min and PV
+              < override (SOC {{ soc }}% < {{ export_min_soc }}% AND\n PV {{ pv_remaining
+              }} kWh < {{ pv_override_kwh }} kWh),\nor EV charging is {{ ev_charging
+              }}.\n"
+  mode: restart
+  variables:
+    export_price: '{{ states(''sensor.energidataservice_export'')|float(0) }}'
+    pv_remaining: '{{ states(''sensor.solcast_pv_forecast_forecast_remaining_today'')|float(0)
+      }}'
+    pv_need: '{{ states(''input_number.morning_sell_min_pv_kwh'')|float(8) }}'
+    soc: '{{ states(''sensor.batteries_state_of_capacity'')|float(0) }}'
+    export_min_soc: '{{ states(''input_number.export_min_soc'')|float(60) }}'
+    ev_charging: '{{ is_state(''switch.rugvaenget13_charging'',''on'') }}'
+    expensive_now: '{{ is_state(''binary_sensor.energy_expensive_now'',''on'') }}'
+    pv_override_kwh: 15
+- id: '1760646829606'
+  alias: EV - Smart Charging_Migrated
+  description: ''
+  triggers:
+  - entity_id: input_boolean.huawei_force_control
+    to: 'on'
+    trigger: state
+  - entity_id:
+    - binary_sensor.ev_allowed_time
+    - binary_sensor.energy_cheap_now
+    - binary_sensor.pv_excess_soon
+    - input_boolean.ev_allow_grid
+    - input_number.ev_daily_need_kwh
+    - sensor.polestar_0796_battery_charge_level
+    trigger: state
+    enabled: false
+  - trigger: time_pattern
+    minutes: /1
+  conditions:
+  - condition: state
+    entity_id: input_boolean.huawei_force_control
+    state: 'on'
+  - condition: state
+    entity_id: binary_sensor.monta_spangsberg_cable_plugged_in
+    state: 'on'
+  actions:
+  - action: button.press
+    metadata: {}
+    target:
+      entity_id: button.rugvaenget13_authorize_charging
+    data: {}
+    enabled: false
+  - variables:
+      cheap_now: '{{ is_state(''binary_sensor.energy_cheap_now'',''on'') }}'
+      sun_soon: '{{ is_state(''binary_sensor.pv_excess_soon'',''on'') }}'
+      allow_grid: '{{ is_state(''input_boolean.ev_allow_grid'',''on'') }}'
+      need_kwh: '{{ states(''input_number.ev_daily_need_kwh'')|float(0) }}'
+      _v_done: '{{ states(''sensor.ev_energy_today'') }}'
+      done_kwh: '{{ (_v_done|float(0)) if _v_done not in [''unknown'',''unavailable'',''none'','''']
+        else 0 }}'
+      need_left: '{{ [need_kwh - done_kwh, 0] | max }}'
+      allowed_time: '{{ is_state(''binary_sensor.ev_allowed_time'',''on'') }}'
+      car_soc: '{{ states(''sensor.polestar_0796_battery_charge_level'')|float(0)
+        }}'
+      battery_soc: '{{ states(''sensor.batteries_state_of_capacity'')|float(0) }}'
+      day_target: '{{ states(''input_number.target_soc_day'')|float(95) }}'
+      night_target: '{{ states(''input_number.target_soc_night'')|float(10) }}'
+      ev_target_soc: '{{ states(''input_number.ev_target_soc'')|float(90) }}'
+      battery_operation_in_progress: '{{ is_state(''input_boolean.battery_operation_in_progress'',''on'')
+        }}'
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ ((need_left > 0 and allowed_time) or (car_soc < ev_target_soc
+          and cheap_now)  or (sun_soon and car_soc < ev_target_soc) ) and not battery_operation_in_progress
+          and (battery_soc >= night_target or sun_soon)}}
+
+          '
+      sequence:
+      - action: script.ev_resume
+    - conditions:
+      - condition: template
+        value_template: "{{ (not allowed_time)\n   or (car_soc >= ev_target_soc)\n
+          \  or (need_left <= 0.1)\n   or battery_operation_in_progress\n   or (battery_soc
+          <= night_target) }}\n"
+      sequence:
+      - action: script.ev_pause
+  mode: restart
+- id: '1760647384700'
+  alias: EV - force charge when PV remaining today > 10 kWh_migrated
+  description: Adds detailed debugging to Logbook, system log and notifications
+  triggers:
+  - trigger: numeric_state
+    entity_id: sensor.solcast_pv_forecast_forecast_remaining_today
+    above: 10
+  conditions:
+  - condition: state
+    entity_id: input_boolean.huawei_force_control
+    state: 'on'
+  - condition: state
+    entity_id: switch.monta_spangsberg_start_stop
+    state: 'off'
+  - condition: template
+    value_template: "{{ states('switch.monta_spangsberg_start_stop') not in ['unavailable','unknown','none']
+      and\n   states('switch.rugvaenget13_charging') not in ['unavailable','unknown','none']
+      }}\n"
+  actions:
+  - action: logbook.log
+    data:
+      name: EV ForceCharge
+      message: 'PRE: pv_remaining={{ states(''sensor.solcast_pv_forecast_forecast_remaining_today'')
+        }} force_control={{ states(''input_boolean.huawei_force_control'') }} monta_start_stop={{
+        states(''switch.monta_spangsberg_start_stop'') }} charging_switch={{ states(''switch.rugvaenget13_charging'')
+        }} attempts={{ states(''counter.ev_start_attempts'') }}'
+      entity_id: switch.monta_spangsberg_start_stop
+  - action: system_log.write
+    data:
+      level: info
+      logger: automation.ev_force_charge_debug
+      message: "[PRE] PV={{ states('sensor.solcast_pv_forecast_forecast_remaining_today')
+        }}, force={{ states('input_boolean.huawei_force_control') }}, monta={{ states('switch.monta_spangsberg_start_stop')
+        }}, charging={{ states('switch.rugvaenget13_charging') }}, attempts={{ states('counter.ev_start_attempts')
+        }}, monta_attrs={{ state_attr('switch.monta_spangsberg_start_stop','friendly_name')
+        }} /\n             cp_id={{ state_attr('switch.monta_spangsberg_start_stop','charge_point_id')
+        }}"
+  - action: switch.turn_on
+    target:
+      entity_id: switch.monta_spangsberg_start_stop
+  - action: logbook.log
+    data:
+      name: EV ForceCharge
+      message: 'POST-CALL: monta_start_stop={{ states(''switch.monta_spangsberg_start_stop'')
+        }} charging_switch={{ states(''switch.rugvaenget13_charging'') }}'
+      entity_id: switch.monta_spangsberg_start_stop
+  - action: system_log.write
+    data:
+      level: info
+      logger: automation.ev_force_charge_debug
+      message: '[POST-CALL] monta={{ states(''switch.monta_spangsberg_start_stop'')
+        }}, charging={{ states(''switch.rugvaenget13_charging'') }}'
+  - wait_template: '{{ is_state(''switch.rugvaenget13_charging'',''on'') }}'
+    timeout: 00:00:45
+    continue_on_timeout: true
+  - action: logbook.log
+    data:
+      name: EV ForceCharge
+      message: 'AFTER-WAIT(45s): charging_switch={{ states(''switch.rugvaenget13_charging'')
+        }} monta_start_stop={{ states(''switch.monta_spangsberg_start_stop'') }}'
+      entity_id: switch.rugvaenget13_charging
+  - action: system_log.write
+    data:
+      level: info
+      logger: automation.ev_force_charge_debug
+      message: '[AFTER-WAIT] charging={{ states(''switch.rugvaenget13_charging'')
+        }}, monta={{ states(''switch.monta_spangsberg_start_stop'') }}'
+  - action: counter.increment
+    target:
+      entity_id: counter.ev_start_attempts
+  - delay: 00:00:10
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: "{{ states('counter.ev_start_attempts')|int(0) >= 3\n   and
+          is_state('switch.rugvaenget13_charging','off') }}\n"
+      sequence:
+      - action: logbook.log
+        data:
+          name: EV ForceCharge
+          message: 'FALLBACK: attempts={{ states(''counter.ev_start_attempts'') }},
+            charging still OFF -> limiting export & setting battery mode.'
+          entity_id: counter.ev_start_attempts
+      - action: system_log.write
+        data:
+          level: warning
+          logger: automation.ev_force_charge_debug
+          message: '[FALLBACK] attempts={{ states(''counter.ev_start_attempts'') }},
+            charging=OFF. Invoking inverter/battery limits.'
+      - action: huawei_solar.set_maximum_feed_grid_power
+        data:
+          device_id: '{{ states(''input_text.huawei_inverter_id'') }}'
+          power: 0
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+      - condition: state
+        entity_id: input_boolean.energy_debug
+        state: 'on'
+      - action: persistent_notification.create
+        data:
+          title: 'EV Force Charge: Fallback engaged'
+          message: 'Could not start charging after {{ states(''counter.ev_start_attempts'')
+            }} attempts. PV remaining today: {{ states(''sensor.solcast_pv_forecast_forecast_remaining_today'')
+            }} kWh. Monta start/stop: {{ states(''switch.monta_spangsberg_start_stop'')
+            }}, Charging relay: {{ states(''switch.rugvaenget13_charging'') }}. Inverter
+            ID: {{ states(''input_text.huawei_inverter_id'') }}.'
+      - action: logbook.log
+        data:
+          name: Energy Manager
+          message: Limited production because EV charger did not start during high
+            remaining PV.
+  mode: single
+- id: '1760648780977'
+  alias: EV - reset attempts and clear export limit_migrated
+  description: ''
+  triggers:
+  - entity_id: switch.monta_spangsberg_start_stop
+    to: 'on'
+    trigger: state
+  - entity_id: sensor.solcast_pv_forecast_forecast_remaining_today
+    below: 10
+    trigger: numeric_state
+  - at: 00:00:00
+    trigger: time
+  conditions: []
+  actions:
+  - target:
+      entity_id: counter.ev_start_attempts
+    action: counter.reset
+  - condition: state
+    entity_id: input_boolean.huawei_force_control
+    state: 'on'
+  - data:
+      device_id: '{{ states(''input_text.huawei_inverter_id'') }}'
+    action: huawei_solar.reset_maximum_feed_grid_power
+  mode: single
+- id: '1760779941600'
+  alias: EV - Set Max Current from PV Surplus
+  description: ''
+  triggers:
+  - minutes: /1
+    trigger: time_pattern
+  conditions:
+  - condition: state
+    entity_id: sensor.monta_spangsberg_state
+    state:
+    - busy-charging
+  actions:
+  - data:
+      name: EV Charging (debug)
+      message: 'Current={{ states(''number.rugvaenget13_charger_max_current'') }}A
+        → Target={{ target_amps | float }}A | PV={{ pv_watts | int }}W | House(raw)={{
+        house_watts_raw | int }}W | EV={{ charger_watts | int }}W | House(net)={{
+        house_watts | int }}W | Surplus={{ surplus_watts | int }}W | min={{ hard_min_current
+        | float }}A max={{ effective_max_current | float }}A boost={{ boost_factor
+        }} | BattSOC={{ battery_soc | int }}% BattBoost={{ battery_boost }} | ExportPrice={{
+        export_price | round(2) }}DKK
+
+        '
+      entity_id: number.rugvaenget13_charger_max_current
+    action: logbook.log
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: "{{ states('number.rugvaenget13_charger_max_current') | float(-1)\n
+          \  != (target_amps | float) and pv_watts > 0 and target_amps | float > 0
+          }}\n"
+      sequence:
+      - target:
+          entity_id: number.rugvaenget13_charger_min_current
+        data:
+          value: '{{ target_amps | float(6) }}'
+        action: number.set_value
+      - target:
+          entity_id: number.rugvaenget13_charger_max_current
+        data:
+          value: '{{ [target_amps | float(6) + 1, effective_max_current | float(16)]
+            | min }}'
+        action: number.set_value
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ now().hour not in [16, 17] }}'
+      sequence:
+      - target:
+          entity_id: number.batteries_maximum_charging_power
+        data:
+          value: 500
+        action: number.set_value
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: switch.rugvaenget13_charging
+        state: 'off'
+      sequence:
+      - target:
+          entity_id: number.batteries_maximum_charging_power
+        data:
+          value: 5000
+        action: number.set_value
+  mode: restart
+  variables:
+    voltage: 230
+    phases: 3
+    reserve_watts: 300
+    base_boost_factor: 2
+    negative_export_boost_factor: 2
+    battery_soc_entity: sensor.batteries_state_of_capacity
+    battery_boost_threshold: 90
+    battery_boost_max_current: 16
+    export_price: '{{ states(''sensor.energidataservice_export'') | float(0) }}'
+    boost_factor: '{{ negative_export_boost_factor if export_price < 0 else base_boost_factor
+      }}'
+    hard_min_current: '{{ [states(''number.ev_charging_hourly_charger_min_current'')
+      | float(6), 6] | max }}'
+    hard_max_current: '{{ states(''number.ev_charging_hourly_charger_max_current'')
+      | float(16) }}'
+    battery_soc: '{{ states(battery_soc_entity) | float(0) }}'
+    battery_boost: '{{ (battery_soc | float(0)) >= (battery_boost_threshold | float(90))
+      }}'
+    effective_max_current: "{% if (battery_soc | float(0)) >= (battery_boost_threshold
+      | float(90)) %}\n  {{ battery_boost_max_current | float(16) }}\n{% else %}\n
+      \ {{ hard_max_current | float(16) }}\n{% endif %}"
+    pv_watts: '{{ states(''sensor.inverter_pv_power'') | float(0) }}'
+    house_watts_raw: '{{ states(''sensor.house_consumption_power'') | float(0) }}'
+    charger_watts: '{{ states(''sensor.rugvaenget13_charge_power'') | float(0) }}'
+    house_watts: '{{ [ (house_watts_raw | float(0) - charger_watts | float(0)), 0
+      ] | max }}'
+    surplus_watts: '{{ [ (pv_watts | float(0) - house_watts | float(0) - reserve_watts
+      | float(0)), 0 ] | max }}'
+    amps_calculated: "{% set V = voltage | float(230) %} {% set P = phases | int(1)
+      %} {% if V > 0 and P > 0 %}\n  {{ (surplus_watts | float(0)) / (V * P) }}\n{%
+      else %}\n  0\n{% endif %}"
+    target_amps: "{% set boosted = (amps_calculated | float(0)) * (boost_factor |
+      float(1)) %} {% set v = boosted | round(0, 'half_up') | float %} {% set minA
+      = hard_min_current | float(6) %} {% set maxA = effective_max_current | float(16)
+      %} {% set minA_clamped = [minA, maxA] | min %} {% if v <= 0 %}\n  0\n{% elif
+      v < minA_clamped %}\n  {{ minA_clamped }}\n{% elif v > maxA %}\n  {{ maxA }}\n{%
+      else %}\n  {{ v }}\n{% endif %}"
+- id: '1760994269511'
+  alias: Start Halloween Background on Boot
+  triggers:
+  - event: start
+    trigger: homeassistant
+  actions:
+  - target:
+      entity_id: media_player.kitchen
+    data:
+      volume_level: 0.81
+    action: media_player.volume_set
+  - target:
+      entity_id: media_player.kitchen
+    data:
+      media:
+        media_content_id: http://192.168.68.53:8123/local/hw_background.mp3
+        media_content_type: music
+        metadata: {}
+    action: media_player.play_media
+  - target:
+      entity_id: media_player.kitchen
+    data:
+      repeat: all
+    action: media_player.repeat_set
+  mode: single
+- id: '1760996169048'
+  alias: Halloween Jump Scare on Motion
+  description: ''
+  triggers:
+  - entity_id: binary_sensor.halloweensensor
+    to: 'on'
+    trigger: state
+  actions:
+  - target:
+      entity_id: media_player.kitchen
+    data:
+      volume_level: 0.6
+    action: media_player.volume_set
+  - target:
+      entity_id: media_player.kitchen
+    data:
+      media:
+        media_content_id: http://192.168.68.53:8123/local/hallowee_scream.wav
+        media_content_type: music
+        metadata: {}
+    action: media_player.play_media
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 20
+      milliseconds: 0
+  - action: automation.trigger
+    metadata: {}
+    data:
+      skip_condition: true
+    target:
+      entity_id: automation.start_halloween_background_on_boot
+  mode: single
+- id: '1761138444956'
+  alias: Polestar – Capture 80% reference range
+  description: ''
+  triggers:
+  - trigger: numeric_state
+    entity_id:
+    - sensor.polestar_0796_battery_charge_level
+    above: 80
+    below: 90
+  conditions:
+  - condition: template
+    value_template: '{{ states(''sensor.polestar_0796_estimated_range'')|float(0)
+      > 0 }}'
+  actions:
+  - action: input_number.set_value
+    metadata: {}
+    data:
+      value: '{{ states(''sensor.polestar_0796_estimated_range'')| float(0) }}'
+    target:
+      entity_id: input_number.polestar_80_reference_range_km
+  mode: single
+- id: '1761897164465'
+  alias: Play Nun Video (Browser Mod v2)
+  description: ''
+  triggers:
+  - trigger: state
+    entity_id:
+    - binary_sensor.halloweensensor
+    from: 'off'
+    to: 'on'
+  conditions: []
+  actions:
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 5
+      milliseconds: 0
+  - target:
+      entity_id: media_player.ferrlap
+    data:
+      media:
+        media_content_id: /local/thenun.mp4
+        media_content_type: video/mp4
+        metadata: {}
+    action: media_player.play_media
+  mode: single
+- id: '1761907618089'
+  alias: Horror – Play Nun Video (BM v2)
+  description: ''
+  triggers:
+  - entity_id: binary_sensor.halloweensensor
+    from: 'off'
+    to: 'on'
+    trigger: state
+  conditions: []
+  actions:
+  - target:
+      entity_id: media_player.kitchen
+    action: media_player.media_stop
+  - target:
+      entity_id: media_player.ferrpc
+    data:
+      media:
+        media_content_id: /local/thenun.mp4
+        media_content_type: video/mp4
+        metadata: {}
+    action: media_player.play_media
+  - delay: 00:00:08
+  mode: single
+- id: '1763712015690'
+  alias: Silja Radiator kontrol
+  triggers:
+  - trigger: time_pattern
+    minutes: /15
+  actions:
+  - choose:
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.siljasonoff_temperature
+        above: 23
+      sequence:
+      - action: light.turn_off
+        target:
+          device_id: c037e4ff73e32b603dc9873685d69afb
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.siljasonoff_temperature
+        below: 23
+      sequence:
+      - action: light.turn_on
+        target:
+          device_id: c037e4ff73e32b603dc9873685d69afb
+  mode: single
+- id: '1763714046470'
+  alias: ' Maja Radiator kontrol'
+  description: ''
+  triggers:
+  - trigger: time_pattern
+    minutes: /15
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.maajatempsonoff_temperature
+        above: 23
+      sequence:
+      - action: light.turn_off
+        data: {}
+        target:
+          device_id: 47b061bbe6108ff4c93b98c2bd6db305
+    - conditions:
+      - condition: numeric_state
+        entity_id: sensor.maajatempsonoff_temperature
+        below: 23
+      sequence:
+      - action: light.turn_on
+        data: {}
+        target:
+          device_id: 47b061bbe6108ff4c93b98c2bd6db305
+  mode: single
+- id: '1771614779114'
+  alias: Battery - targets, peak, export_Migrated2
+  description: ''
+  triggers:
+  - entity_id: input_boolean.huawei_force_control
+    to: 'on'
+    trigger: state
+  - entity_id:
+    - sensor.batteries_state_of_capacity
+    - binary_sensor.energy_cheap_now
+    - binary_sensor.energy_expensive_now
+    - binary_sensor.pv_excess_soon
+    - switch.rugvaenget13_charging
+    trigger: state
+  - value_template: "{{ is_state('input_boolean.huawei_force_control','on')\n   and
+      states('sensor.time') in ['00:00','06:00','09:00','11:00','13:00','15:00','16:00','17:00','21:00']
+      }}\n"
+    trigger: template
+  conditions:
+  - condition: state
+    entity_id: input_boolean.huawei_force_control
+    state: 'on'
+  actions:
+  - variables:
+      vacation_mode: '{{ is_state(''input_boolean.vacation_mode'',''on'') }}'
+      expensive_export_price: '{{ states(''input_number.expensive_export_price'')
+        | float(0) }}'
+      current_power_price_hr: '{{ state_attr(''sensor.energi_data_service'',''current_price'')
+        | float(0) }}'
+      soc: '{{ states(''sensor.batteries_state_of_capacity'') | float(0) }}'
+      cheap_now: '{{ is_state(''binary_sensor.energy_cheap_now'',''on'') }}'
+      expensive_now: '{{ is_state(''binary_sensor.energy_expensive_now'',''on'') }}'
+      pv_good: '{{ is_state(''binary_sensor.pv_excess_soon'',''on'') }}'
+      hour: '{{ now().hour }}'
+      day_target: '{{ states(''input_number.target_soc_day'') | float(95) }}'
+      night_target: '{{ states(''input_number.target_soc_night'') | float(10) }}'
+      allow_export: '{{ is_state(''input_boolean.allow_export'',''on'') }}'
+      export_min_soc: '{{ states(''input_number.export_min_soc'') | float(60) }}'
+      ev_charging: '{{ is_state(''switch.rugvaenget13_charging'',''on'') }}'
+      export_price: '{{ states(''sensor.energidataservice_export'') | float(0) }}'
+      forecast_tomorrow: '{{ states(''sensor.solcast_pv_forecast_forecast_tomorrow'')
+        | float(0) }}'
+      forecast_today: '{{ states(''sensor.solcast_pv_forecast_forecast_today'') |
+        float(0) }}'
+      forecast_remaining_today: "{{ states('sensor.solcast_pv_forecast_forecast_remaining_today')
+        | float(0) }}      house_consumption_power: > {{ states('sensor.house_consumption_power')
+        | float(300) }}      dynamic_power: | {{ states('sensor.inverter_pv_power')
+        | float -\n   states('sensor.house_consumption_power') | float }}"
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ soc < 60 and 15 <= hour <= 16 }}'
+      sequence:
+      - action: script.huawei_force_charge_to_target_soc_param_migrated
+        data:
+          target_soc: 60
+          power: 5000
+      - condition: state
+        entity_id: input_boolean.energy_debug
+        state: 'on'
+      - action: logbook.log
+        data:
+          name: Energy Manager
+          message: Emergency charge - charging to 60% for afternoon peak ({{ soc }}%)
+    - conditions:
+      - condition: template
+        value_template: '{{ export_price < 0 and hour < 15 }}'
+      sequence:
+      - action: script.huawei_export_limit_w
+        data:
+          power: 0
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+      - condition: state
+        entity_id: input_boolean.energy_debug
+        state: 'on'
+      - action: logbook.log
+        data:
+          name: Energy Manager
+          message: Export blocked (negative export price).
+    - conditions:
+      - condition: template
+        value_template: '{{ ev_charging and not ((forecast_remaining_today < 10 or
+          hour == 16) and soc < day_target and 9 <= hour <= 17) }}'
+      sequence:
+      - action: script.huawei_export_limit_w
+        data:
+          power: 0
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+    - conditions:
+      - condition: state
+        entity_id: input_boolean.vacation_mode
+        state: 'on'
+      - condition: template
+        value_template: '{{ vacation_mode and soc > 15 and export_price > expensive_export_price
+          and hour >= 17 }}'
+      sequence:
+      - action: script.huawei_export_unlimited
+        data: {}
+      - action: script.huawei_force_discharge_to_soc
+        data:
+          target_soc: 15
+      - action: script.set_battery_working_mode
+        data:
+          power: 100
+    - conditions:
+      - condition: template
+        value_template: '{% set hours = state_attr(''sensor.billigste_4_timer_i_dag_unikke_timer'',''hours'')
+          or [] %} {{ now().strftime(''%H'') in hours }}'
+      sequence:
+      - action: script.huawei_force_charge_to_target_soc_param_migrated
+        data:
+          target_soc: '{{ night_target | int }}'
+          power: 5000
+      - action: number.set_value
+        data:
+          value: '{{ ((house_consumption_power | float) * 1.5) | int }}'
+        target:
+          entity_id: number.batteries_maximum_discharging_power
+    - conditions:
+      - condition: template
+        value_template: "{{ soc < 10\n   and forecast_tomorrow < 15\n   and cheap_now\n
+          \  and hour >= 0\n   and hour < 6\n   and soc < night_target\n   and forecast_today
+          <= 10 }}"
+      sequence:
+      - action: script.huawei_force_charge_to_target_soc_param_migrated
+        data:
+          target_soc: '{{ night_target | int }}'
+          power: 5000
+    - conditions:
+      - condition: template
+        value_template: "{{ soc < 10\n   and forecast_tomorrow < 15\n   and 13 <=
+          hour <= 16\n   and soc < day_target }}"
+      sequence:
+      - action: script.huawei_force_charge_to_target_soc_param_migrated
+        data:
+          target_soc: '{{ day_target | int }}'
+          power: 5000
+    - conditions:
+      - condition: template
+        value_template: "{{ (forecast_remaining_today < 10 or hour == 16)\n   and
+          soc < day_target\n   and 9 <= hour <= 17 }}"
+      sequence:
+      - action: script.huawei_force_charge_to_target_soc_param_migrated
+        data:
+          target_soc: '{{ day_target | int }}'
+          power: 5000
+      - action: number.set_value
+        data:
+          value: '{{ ((house_consumption_power | float) * 1.5) | int }}'
+        target:
+          entity_id: number.batteries_maximum_discharging_power
+    - conditions:
+      - condition: template
+        value_template: "{{ hour < 17\n   and soc >= day_target\n   and not ev_charging
+          }}"
+      sequence:
+      - action: script.huawei_export_limit_w
+        data:
+          power: 0
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+      - action: number.set_value
+        data:
+          value: '{{ ((house_consumption_power | float) * 1.5) | int }}'
+        target:
+          entity_id: number.batteries_maximum_discharging_power
+    - conditions:
+      - condition: template
+        value_template: "{{ hour >= 17\n   and export_price >= expensive_export_price\n
+          \  and soc > 15\n   and not ev_charging }}"
+      sequence:
+      - action: script.huawei_export_unlimited
+        data: {}
+      - action: script.huawei_force_discharge_to_soc
+        data:
+          target_soc: 15
+      - action: script.set_battery_working_mode
+        data:
+          power: 30
+    - conditions:
+      - condition: template
+        value_template: "{{ allow_export\n   and expensive_now\n   and soc >= export_min_soc\n
+          \  and not ev_charging\n   and hour >= 17 }}"
+      sequence:
+      - action: script.huawei_export_limit_w
+        data:
+          power: 0
+      - action: script.set_battery_working_mode
+        data:
+          power: 0
+    default:
+    - action: script.set_battery_working_mode
+      data:
+        power: 0
+    - action: number.set_value
+      data:
+        value: '5000'
+      target:
+        entity_id: number.batteries_maximum_discharging_power
+  mode: restart
+- id: '1778154418903'
+  alias: DrivHusCheckTemp
+  description: ''
+  triggers:
+  - trigger: numeric_state
+    entity_id:
+    - sensor.drivhus_temperature
+    for:
+      hours: 0
+      minutes: 15
+      seconds: 0
+    above: 35
+  conditions: []
+  actions:
+  - action: notify.mobile_app_sm_s938b
+    metadata: {}
+    data:
+      message: Temperatur i drivhus høj
+  mode: single

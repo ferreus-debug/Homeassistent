@@ -1,21 +1,699 @@
-# ============================================================
-# Home Assistant Configuration - Add this to your main config
-# ============================================================
+default_config:
 
-# Include the EV Savings Calculator package
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+
+frontend:
+  themes: !include_dir_merge_named themes
+  extra_module_url:
+    - /hacsfiles/material-you-utilities/material-you-utilities.min.js
+
+panel_custom:
+  - name: material-you-panel
+    url_path: material-you-configuration
+    sidebar_title: Material You Utilities
+    sidebar_icon: mdi:material-design
+    module_url: /hacsfiles/material-you-utilities/material-you-utilities.min.js
+
+influxdb:
+  api_version: 2
+  host: 192.168.68.53
+  port: 8086
+  ssl: false
+  verify_ssl: false
+  organization: home
+  bucket: homeassistant
+  token: !secret influx_token
+  default_measurement: state
+  include:
+    domains:
+      - sensor
+    entity_globs:
+      - sensor.ev_*
+      - sensor.p1meterimport_*
+    entities:
+      # Pris
+      - sensor.energi_data_service
+
+      # Polestar SoC
+      - sensor.polestar_0796_battery_charge_level
+
+      # Grid import/export timetal
+      - sensor.grid_import_hourly
+      - sensor.grid_export_hourly
+
+      # EV opladning cost
+      - sensor.ev_charging_cost_per_hour
+      - sensor.ev_charging_daily_cost
+      - sensor.ev_charging_weekly_cost
+      - sensor.ev_charging_monthly_cost
+      - sensor.ev_charging_yearly_cost
+      - sensor.ev_charging_cost_hourly_net_only
+      - sensor.ev_charging_cost_daily_net_only
+      - sensor.ev_charging_cost_weekly_net_only
+      - sensor.ev_charging_cost_monthly_net_only
+      - sensor.ev_charging_cost_yearly_net_only
+
+      - sensor.inverter_weekly_yield
+
+      - sensor.p1_meter_power
+
+      - sensor.power_meter_consumption_energy_daily
+
+      - sensor.batteries_state_of_capacity
+      - sensor.rugvaenget13_energy_meter
+      - utility_meter.ev_energy_today
+
+      # Afledt grid import kW (fra vores automations-pakke)
+      - sensor.grid_import_kw
+
+      # EV Savings Calculator sensors
+      - sensor.benzinpris_dk
+      - sensor.benzinomkostning_denne_uge
+      - sensor.benzinomkostning_denne_maned
+      - sensor.ev_besparelse_denne_uge
+      - sensor.ev_besparelse_denne_maned
+      - sensor.opel_astra_pris_per_km
+      - sensor.polestar3_pris_per_km_uge
+      - sensor.polestar3_pris_per_km_maned
+
 homeassistant:
+  external_url: "https://homeassistent.mathiasspangsberg.com"
+  internal_url: "http://homeassistant.local:8123"
+
   packages:
-    ev_savings_calculator: !include packages/ev-savings-calculator-package.yaml
+    huawei_solar_yield: !include packages/huawei-solar-yield-package.yaml
+    huawei_solar_battery_card: !include packages/huawei-solar-battery-card-package.yaml
+    huawei_solar_battery_correction: !include packages/huawei-solar-battery-correction-package.yaml
+    huawei_solar_diagnostic: !include packages/huawei-solar-diagnostic-package.yaml
+    huawei_solar_power_flow_card: !include packages/huawei-solar-power-flow-card-package.yaml
+    huawei_solar_energy_flow_card: !include packages/huawei-solar-energy-flow-card-package.yaml
+    solcast_solar: !include packages/solcast-solar-package.yaml
+    hsbo: !include packages/huawei_solar_battery_optimization.yaml
+    sinput: !include packages/huawei_solar_input.yaml
+    soloarpees: !include packages/huawei_solar_pees.yaml
+    intellicharge: !include packages/energistyring_intellicharge.yaml
+    ev_savings: !include packages/ev-savings-calculator-package.yaml
 
-# ============================================================
-# OPTIONAL: For HACS Fuelprices_DK integration
-# ============================================================
-# If you want to use OPTION A (automatic fuel prices), uncomment:
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
 
-# fuelprices_dk:
-#   companies:
-#     - ok
-#     - shell
-#     - circlek
-#   fueltypes:
-#     - oktan 95
+fuelprices_dk:
+  # Optional entries
+  # Bypass the default update interval (60 minutes)
+  update_interval: 300
+  companies:
+  # possible values are: circlek, f24, goon, ingo, oil, ok, q8 and shell
+    - ok
+  fueltypes:
+  # Possible values are: oktan 95, oktan 95+, oktan 100, diesel, diesel+ and electric
+    - oktan 95
+
+lovelace:
+  mode: yaml
+  resources:
+    - url: /hacsfiles/simple-swipe-card/simple-swipe-card.js
+      type: module
+    - url: /hacsfiles/mushroom/mushroom.js
+      type: module
+    - url: /hacsfiles/ha-floorplan/floorplan.js
+      type: module
+    - url: /hacsfiles/apexcharts-card/apexcharts-card.js
+      type: module
+    - url: /hacsfiles/flex-horseshoe-card/flex-horseshoe-card.js
+      type: module
+    - url: /hacsfiles/lovelace-layout-card/layout-card.js
+      type: module
+    - url: /hacsfiles/lovelace-plotly-graph-card/plotly-graph-card.js
+      type: module
+    - url: /hacsfiles/sunsynk-power-flow-card/sunsynk-power-flow-card.js
+      type: module
+    - url: /hacsfiles/lovelace-card-mod/card-mod.js
+      type: module
+    - url: /hacsfiles/hourly-weather/hourly-weather.js
+      type: module
+    - url: /hacsfiles/power-flow-card-plus/power-flow-card-plus.js
+      type: module
+    - url: /hacsfiles/energy-flow-card-plus/energy-flow-card-plus.js
+      type: module
+    - url: /hacsfiles/bar-card/bar-card.js
+      type: module
+    - url: /hacsfiles/config-template-card/config-template-card.js
+      type: module
+    - url: /hacsfiles/button-card/button-card.js
+      type: module
+    - url: /hacsfiles/lovelace-auto-entities/auto-entities.js
+      type: module
+    - url: /hacsfiles/collapsable-cards/collapsable-cards.js
+      type: module
+    - url: /hacsfiles/home-assistant-simple-tabs/simple-tabs.js
+      type: module
+    - url: /hacsfiles/clock-weather-card-hui-icons/clock-weather-card-hui-icons.js
+      type: module
+    - url: /hacsfiles/Bubble-Card/bubble-card.js
+      type: module
+    - url: /hacsfiles/Home-Assistant-Lovelace-Local-Conditional-Card/local-conditional-card.js
+      type: module
+    - url: /hacsfiles/advanced-camera-card/advanced-camera-card.js
+      type: module
+    - url: /hacsfiles/decluttering-card/decluttering-card.js
+      type: module
+    - url: /hacsfiles/horizontal-waterfall-history-card/horizontal-waterfall-history-card.js
+      type: module
+    - url: /hacsfiles/kiosk-mode/kiosk-mode.js
+      type: module
+    - url: /hacsfiles/lovelace-expander-card/expander-card.js
+      type: module
+    - url: /hacsfiles/lovelace-hourly-weather/hourly-weather.js
+      type: module
+    - url: /hacsfiles/lovelace-paper-buttons-row/paper-buttons-row.js
+      type: module
+    - url: /hacsfiles/material-web-utilities/material-web-utilities.js
+      type: module
+    - url: /hacsfiles/mini-graph-card/mini-graph-card-bundle.js
+      type: module
+    - url: /hacsfiles/mini-media-player/mini-media-player-bundle.js
+      type: module
+    - url: /hacsfiles/simple-view-card/simple-view-card.js
+      type: module
+    - url: /hacsfiles/stack-in-card/stack-in-card.js
+      type: module
+    - url: /hacsfiles/timer-bar-card/timer-bar-card.js
+      type: module
+    - url: /hacsfiles/vertical-stack-in-card/vertical-stack-in-card.js
+      type: module
+    - url: /hacsfiles/calendar-card-pro/calendar-card-pro.js
+      type: module
+
+timer:
+  poolpumpe_timer:
+    duration: "06:00:00"
+
+input_datetime:
+  discharge_start_time:
+    name: Start afladning
+    has_time: true
+    has_date: false
+    initial: "19:00"
+  discharge_end_time:
+    name: Stop afladning
+    has_time: true
+    has_date: false
+    initial: "21:00"
+
+input_boolean:
+  battery_operation_in_progress:
+    name: Battery Operation In Progress
+    initial: off
+    icon: mdi:lock
+
+input_number:
+  ev_target_soc:
+    name: EV Target SOC
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    initial: 90
+
+  min_solar_kwh_for_car_charging:
+    name: Min solar kWh for car charging
+    min: 10
+    max: 50
+    step: 1
+    unit_of_measurement: "kWh"
+    icon: mdi:weather-sunny
+
+  discharge_power_kw:
+    name: Afladnings-effekt (watt)
+    min: 500
+    max: 5000
+    step: 100
+    unit_of_measurement: W
+    icon: mdi:transmission-tower-export
+
+  export_price_threshold:
+    name: Minimum pris for eksport (DKK/kWh)
+    min: 0
+    max: 5
+    step: 0.05
+    unit_of_measurement: "DKK/kWh"
+    icon: mdi:currency-dkk
+
+  export_soc_threshold:
+    name: Minimum SOC for eksport (%)
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    icon: mdi:battery-high
+
+  charge_price_threshold:
+    name: Makspris for import (DKK/kWh)
+    min: -2
+    max: 4
+    step: 0.05
+    unit_of_measurement: "DKK/kWh"
+    icon: mdi:currency-dkk
+
+  min_remaining_solar_kwh:
+    name: Min. sol tilbage for import
+    min: 0
+    max: 20
+    step: 1
+    unit_of_measurement: kWh
+    icon: mdi:weather-sunny-off
+
+  export_min_solar_kwh:
+    name: Min. sol (kWh) for eksport
+    min: 0
+    max: 20
+    step: 1
+    unit_of_measurement: kWh
+    icon: mdi:weather-sunny
+
+sensor:
+  - platform: worxlandroid
+    host: 192.168.68.59
+    pin: 2312
+
+  - platform: template
+    sensors:
+      billigste_5_timer:
+        friendly_name: "Billigste 5 Timer"
+        unique_id: billigste_5_timer
+        value_template: "0"
+      dyreste_5_timer:
+        friendly_name: "Dyreste 5 Timer"
+        unique_id: dyreste_5_timer
+        value_template: "0"
+
+  - platform: command_line
+    name: "Due Todoist Tasks"
+    command: "python3 /config/scripts/todoist_latest_tasks.py"
+    scan_interval: 3600
+    value_template: "{{ value }}"
+
+template:
+  - sensor:
+      - name: "Billigste 4 timer i dag - unikke timer"
+        unique_id: billigste_4_timer_i_dag_unikke_timer
+        state: >
+          {% set s = state_attr('sensor.energi_data_service','raw_today') or [] %}
+          {% set tariffs = state_attr('sensor.energi_data_service','tariffs') or {} %}
+          {% set add = (tariffs.get('additional_tariffs',{}).get('transmissions_nettarif',0) | float(0))
+                      + (tariffs.get('additional_tariffs',{}).get('systemtarif',0) | float(0))
+                      + (tariffs.get('additional_tariffs',{}).get('elafgift',0) | float(0)) %}
+          {% set per_hour = tariffs.get('tariffs',{}) %}
+          {% set items = s | map(attribute='hour') | list %}
+          {% set prices = s | map(attribute='price') | list %}
+          {% set n = items | count %}
+
+          {% if n < 4 %}
+            unknown
+          {% else %}
+            {% set ns = namespace(seq=[]) %}
+            {% for i in range(n) %}
+              {% set dt = items[i] | as_datetime %}
+              {% set hour_key = dt.hour | string %}
+              {% set hourly_tariff = per_hour.get(hour_key, 0) | float(0) %}
+              {% set total = (prices[i] | float(0)) + add + hourly_tariff %}
+              {% set ns.seq = ns.seq + [{'dt': dt, 'p': total}] %}
+            {% endfor %}
+            {% set win = namespace(windows=[]) %}
+            {% for i in range(0, n - 3) %}
+              {% set window = ns.seq[i:i+4] %}
+              {% set ssum = window | map(attribute='p') | sum %}
+              {% set win.windows = win.windows + [{'dt': window[0].dt, 'sum': ssum}] %}
+            {% endfor %}
+
+            {% if win.windows | count == 0 %}
+              unknown
+            {% else %}
+              {% set sorted = win.windows | sort(attribute='sum') %}
+
+              {# 4. Find op til 4 unikke billigste timer (0-23) #}
+              {% set uq = namespace(hours=[]) %}
+              {% for w in sorted %}
+                {% set h = w.dt.hour %}
+                {% if (h not in uq.hours) and (uq.hours | count < 4) %}
+                  {% set uq.hours = uq.hours + [h] %}
+                {% endif %}
+              {% endfor %}
+
+              {% if uq.hours | count == 0 %}
+                unknown
+              {% else %}
+                {{ '%02d' % uq.hours[0] }}
+              {% endif %}
+            {% endif %}
+          {% endif %}
+        attributes:
+          hours: >
+            {% set s = state_attr('sensor.energi_data_service','raw_today') or [] %}
+            {% set tariffs = state_attr('sensor.energi_data_service','tariffs') or {} %}
+            {% set add = (tariffs.get('additional_tariffs',{}).get('transmissions_nettarif',0) | float(0))
+                        + (tariffs.get('additional_tariffs',{}).get('systemtarif',0) | float(0))
+                        + (tariffs.get('additional_tariffs',{}).get('elafgift',0) | float(0)) %}
+            {% set per_hour = tariffs.get('tariffs',{}) %}
+            {% set items = s | map(attribute='hour') | list %}
+            {% set prices = s | map(attribute='price') | list %}
+            {% set n = items | count %}
+
+            {% if n < 4 %}
+              {{ none }}
+            {% else %}
+              {% set ns = namespace(seq=[]) %}
+              {% for i in range(n) %}
+                {% set dt = items[i] | as_datetime %}
+                {% set hour_key = dt.hour | string %}
+                {% set hourly_tariff = per_hour.get(hour_key, 0) | float(0) %}
+                {% set total = (prices[i] | float(0)) + add + hourly_tariff %}
+                {% set ns.seq = ns.seq + [{'dt': dt, 'p': total}] %}
+              {% endfor %}
+
+              {% set win = namespace(windows=[]) %}
+              {% for i in range(0, n - 3) %}
+                {% set window = ns.seq[i:i+4] %}
+                {% set ssum = window | map(attribute='p') | sum %}
+                {% set win.windows = win.windows + [{'dt': window[0].dt, 'sum': ssum}] %}
+              {% endfor %}
+
+              {% if win.windows | count == 0 %}
+                {{ none }}
+              {% else %}
+                {% set sorted = win.windows | sort(attribute='sum') %}
+                {% set uq = namespace(hours=[]) %}
+                {% for w in sorted %}
+                  {% set h = w.dt.hour %}
+                  {% if (h not in uq.hours) and (uq.hours | count < 4) %}
+                    {% set uq.hours = uq.hours + [h] %}
+                  {% endif %}
+                {% endfor %}
+                {% if uq.hours | count == 0 %}
+                  {{ none }}
+                {% else %}
+                  [ {% for h in uq.hours %}"{{ '%02d' % h }}"{% if not loop.last %}, {% endif %}{% endfor %} ]
+                {% endif %}
+              {% endif %}
+            {% endif %}
+          friendly_name: "Billigste 4 timer i dag (unikke timer)"
+          icon: mdi:clock-outline
+
+      - name: "Zaptec Total Charge Power"
+        unique_id: zaptec_total_charge_power
+        state: >
+          {% set v = state_attr('sensor.rugvaenget13_charger','total_charge_power') %}
+          {% if v is number %}{{ v|float }}
+          {% elif v is string %}{{ v|float(0) }}
+          {% else %}unknown{% endif %}
+        unit_of_measurement: "kW"
+        device_class: power
+        state_class: measurement
+        availability: >
+          {{ state_attr('sensor.rugvaenget13_charger','total_charge_power') is not none }}
+
+      - name: "EV charging net kWh hourly (estimated)"
+        unit_of_measurement: "kWh"
+        state_class: measurement
+        device_class: energy
+        state: >
+          {% set ev = states('sensor.ev_charging_hourly') | float(0) %}
+          {% set imp = states('sensor.p1meterimport_hourly') | float(0) %}
+          {% set sol = states('sensor.inverter_hourly_yield') | float(0) %}
+
+          {% set supply = imp + sol %}
+          {% set net_share = (imp / supply) if supply > 0 else 1 %}
+          {% set ev_net = ev * net_share %}
+
+          {{ ev_net | round(3) }}
+
+      - name: "EV charging cost per hour"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set kwh = states('sensor.ev_charging_hourly') | float(0) %}
+          {% set price = states('sensor.energi_data_service') | float(0) %}
+          {{ (kwh * price) | round(2) }}
+
+      - name: "EV charging daily cost"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set kwh = states('sensor.ev_charging_daily') | float(0) %}
+          {% set price = states('sensor.energi_data_service') | float(0) %}
+          {{ (kwh * price) | round(2) }}
+
+      - name: "EV charging weekly cost"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set kwh = states('sensor.ev_charging_weekly') | float(0) %}
+          {% set price = states('sensor.energi_data_service') | float(0) %}
+          {{ (kwh * price) | round(2) }}
+
+      - name: "EV charging monthly cost"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set kwh = states('sensor.ev_charging_monthly') | float(0) %}
+          {% set price = states('sensor.energi_data_service') | float(0) %}
+          {{ (kwh * price) | round(2) }}
+
+      - name: "EV charging yearly cost"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set kwh = states('sensor.ev_charging_yearly') | float(0) %}
+          {% set price = states('sensor.energi_data_service') | float(0) %}
+          {{ (kwh * price) | round(2) }}
+
+      - name: "Polestar Odometer Filtered"
+        unit_of_measurement: "km"
+        device_class: distance
+        state_class: total_increasing
+        state: >
+          {% set current = states('sensor.polestar_0796_current_odometer') | float(0) %}
+          {% set last = states('sensor.polestar_odometer_filtered') | float(0) %}
+          {% if current >= last %}
+            {{ current }}
+          {% else %}
+            {{ last }}
+          {% endif %}
+
+      - name: "EV netonly weekly - bilopladning (debug)"
+        unit_of_measurement: "kWh"
+        state: "{{ states('sensor.ev_charging_weekly') }}"
+
+      - name: "EV netonly weekly - net_import (debug)"
+        unit_of_measurement: "kWh"
+        state: "{{ states('sensor.p1meterimport_weekly') }}"
+
+      - name: "EV netonly weekly - solar (debug)"
+        unit_of_measurement: "kWh"
+        state: "{{ states('sensor.inverter_weekly_yield') }}"
+
+      - name: "EV charging cost hourly (net only)"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set bilopladning = states('sensor.ev_charging_hourly') | float(0) %}
+          {% set net_import = states('sensor.p1meterimport_hourly') | float(0) %}
+          {% set frasolar = states('sensor.inverter_hourly_yield') | float(0) %}
+          {% set pris_pr_kwh = states('sensor.energi_data_service') | float(0) %}
+          {% set estimeret_nettokwh = [bilopladning - frasolar, 0] | max %}
+          {% set estimeret_nettokwh = [estimeret_nettokwh, net_import, bilopladning] | min %}
+          {{ (estimeret_nettokwh * pris_pr_kwh) | round(2) }}
+
+      - name: "EV charging cost daily (net only)"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set bilopladning = states('sensor.ev_charging_daily') | float(0) %}
+          {% set net_import = states('sensor.p1meterimport_daily') | float(0) %}
+          {% set frasolar = states('sensor.inverter_daily_yield') | float(0) %}
+          {% set pris_pr_kwh = states('sensor.energi_data_service') | float(0) %}
+          {% set estimeret_nettokwh = [bilopladning - frasolar, 0] | max %}
+          {% set estimeret_nettokwh = [estimeret_nettokwh, net_import, bilopladning] | min %}
+          {{ (estimeret_nettokwh * pris_pr_kwh) | round(2) }}
+
+      - name: "EV charging cost weekly (net only)"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set ev = states('sensor.ev_charging_weekly') | float(0) %}
+          {% set imp = states('sensor.p1meterimport_weekly') | float(0) %}
+          {% set sol = states('sensor.inverter_weekly_yield') | float(0) %}
+          {% set pris = states('sensor.energi_data_service') | float(0) %}
+          {% set supply = imp + sol %}
+          {% set net_share = (imp / supply) if supply > 0 else 1 %}
+          {% set ev_net = ev * net_share %}
+          {{ (ev_net * pris) | round(2) }}
+
+      - name: "EV charging cost monthly (net only)"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set bilopladning = states('sensor.ev_charging_monthly') | float(0) %}
+          {% set net_import = states('sensor.p1meterimport_monthly') | float(0) %}
+          {% set frasolar = states('sensor.inverter_monthly_yield') | float(0) %}
+          {% set pris_pr_kwh = states('sensor.energi_data_service') | float(0) %}
+          {% set estimeret_nettokwh = [bilopladning - frasolar, 0] | max %}
+          {% set estimeret_nettokwh = [estimeret_nettokwh, net_import, bilopladning] | min %}
+          {{ (estimeret_nettokwh * pris_pr_kwh) | round(2) }}
+
+      - name: "EV charging cost yearly (net only)"
+        unit_of_measurement: "DKK"
+        state: >
+          {% set bilopladning = states('sensor.ev_charging_yearly') | float(0) %}
+          {% set net_import = states('sensor.p1meterimport_yearly') | float(0) %}
+          {% set frasolar = states('sensor.inverter_yearly_yield') | float(0) %}
+          {% set pris_pr_kwh = states('sensor.energi_data_service') | float(0) %}
+          {% set estimeret_nettokwh = [bilopladning - frasolar, 0] | max %}
+          {% set estimeret_nettokwh = [estimeret_nettokwh, net_import, bilopladning] | min %}
+          {{ (estimeret_nettokwh * pris_pr_kwh) | round(2) }}
+
+  - binary_sensor:
+      - name: "Should charge car at night"
+        unique_id: should_charge_car_night
+        state: >
+          {% set soc = states('sensor.polestar_0796_battery_charge_level') | float(100) %}
+          {{ soc < 75 }}
+        icon: mdi:car-electric
+
+      - name: "Should charge car"
+        unique_id: should_charge_car_solar_or_cheap
+        availability: >
+          {{ states('sensor.polestar_0796_battery_charge_level') | is_number and
+             states('sensor.solcast_pv_forecast_forecast_remaining_today') | is_number }}
+        state: >
+          {% set soc = states('sensor.polestar_0796_battery_charge_level') | float(100) %}
+          {% set solar = states('sensor.solcast_pv_forecast_forecast_remaining_today') | float(0) %}
+          {% set solar_threshold = states('input_number.min_solar_kwh_for_car_charging') | float(2) %}
+          {% set hour = now().hour %}
+          {{ soc < 90 and (solar > solar_threshold or (hour >= 10 and hour < 17)) }}
+        icon: >
+          {% if this.state == 'on' %}
+            mdi:ev-station
+          {% else %}
+            mdi:car
+          {% endif %}
+
+      - name: "EV paused due battery target"
+        state: >
+          {{ is_state('input_boolean.battery_operation_in_progress','on')
+             or states('sensor.batteries_state_of_capacity')|float(0)
+                <= states('input_number.target_soc_night')|float(0) }}
+        device_class: safety
+
+      - name: "Skal eksportere fra batteri"
+        unique_id: intelligent_batteri_eksport
+        availability: >
+          {{ states('sensor.batteries_state_of_capacity') | is_number and
+             states('sensor.solcast_pv_forecast_forecast_remaining_today') | is_number and
+             states('sensor.energidataservice_export') | is_number and
+             states('sensor.batteries_rated_capacity') | is_number }}
+        state: >
+          {% set soc = states('sensor.batteries_state_of_capacity') | float(0) %}
+          {% set sol_kwh = states('sensor.solcast_pv_forecast_forecast_remaining_today') | float(0) %}
+          {% set pris = states('sensor.energidataservice_export') | float(0) %}
+          {% set p_thr = states('input_number.export_price_threshold') | float(0) %}
+          {% set soc_thr = states('input_number.export_soc_threshold') | float(0) %}
+          {% set cap_kwh = (states('sensor.batteries_rated_capacity') | float(0)) / 1000 %}
+          {% set sol_req = states('input_number.export_min_solar_kwh') | float(12) %}
+          {% set solar_as_pct = (sol_kwh / cap_kwh * 100) if cap_kwh > 0 else 0 %}
+          {% set soc_missing = 100 - soc %}
+          {% set cond_soc_vs_sol_ok = soc_missing < solar_as_pct %}
+          {{ sol_kwh > sol_req and pris >= p_thr and soc >= soc_thr and cond_soc_vs_sol_ok }}
+        attributes:
+          soc_percent: "{{ states('sensor.batteries_state_of_capacity') }}"
+          sol_kwh_remaining: "{{ states('sensor.solcast_pv_forecast_forecast_remaining_today') }}"
+          sol_kwh_req: "{{ states('input_number.export_min_solar_kwh') }}"
+          price_dkk_kwh: "{{ states('sensor.energidataservice_export') }}"
+          price_threshold: "{{ states('input_number.export_price_threshold') }}"
+          soc_threshold: "{{ states('input_number.export_soc_threshold') }}"
+          sol_pct_of_battery: >
+            {% set cap_kwh = (states('sensor.batteries_rated_capacity')|float(0)) / 1000 %}
+            {% set sol_kwh = states('sensor.solcast_pv_forecast_forecast_remaining_today')|float(0) %}
+            {{ ((sol_kwh / cap_kwh * 100) if cap_kwh>0 else 0) | round(1) }}
+          cond_sol_ok: >
+            {{ states('sensor.solcast_pv_forecast_forecast_remaining_today')|float(0) >
+               states('input_number.export_min_solar_kwh')|float(12) }}
+          cond_price_ok: >
+            {{ states('sensor.energidataservice_export')|float(0) >=
+               states('input_number.export_price_threshold')|float(0) }}
+          cond_soc_ok: >
+            {{ states('sensor.batteries_state_of_capacity')|float(0) >=
+               states('input_number.export_soc_threshold')|float(0) }}
+          cond_soc_vs_sol_ok: "{{ cond_soc_vs_sol_ok }}"
+        icon: >
+          {% if this.state == 'on' %}
+            mdi:battery-export
+          {% else %}
+            mdi:battery-export-outline
+          {% endif %}
+
+      - name: "Skal oplade fra grid"
+        unique_id: intelligent_grid_charge
+        availability: >
+          {{ states('sensor.energi_data_service') | is_number and
+             states('sensor.solcast_pv_forecast_forecast_remaining_today') | is_number }}
+        state: >
+          {% set pris = states('sensor.energi_data_service') | float(10) %}
+          {% set p_thr = states('input_number.charge_price_threshold') | float(-0.01) %}
+          {% set sol_rest = states('sensor.solcast_pv_forecast_forecast_remaining_today') | float(99) %}
+          {% set s_thr = states('input_number.min_remaining_solar_kwh') | float(3) %}
+          {% set timen = now().hour %}
+          {{ (13 <= timen < 16) and ((pris <= p_thr) or (sol_rest < s_thr)) }}
+        icon: >
+          {% if this.state == 'on' %}
+            mdi:battery-import
+          {% else %}
+            mdi:battery-outline
+          {% endif %}
+
+shell_command:
+  nicehash_start_rigs: python3 /config/scripts/nicehash_start_all_rigs.py
+  nicehash_stop_rigs: python3 /config/scripts/nicehash_stop_all_rigs.py
+
+rest_command:
+  add_todoist_task:
+    url: https://api.todoist.com/rest/v2/tasks
+    method: POST
+    headers:
+      Authorization: "Bearer 8b97e91f9f237db52284402f3c44340a053df489"
+      Content-Type: "application/json"
+    payload: |
+      {
+        "content": "{{ content }}",
+        "project_id": "2346146618",
+        "due_string": "next Sunday",
+        "due_lang": "en",
+        "priority": "{{ priority }}"
+      }
+
+utility_meter:
+  ev_charging_hourly:
+    source: sensor.rugvaenget13_session_total_charge
+    cycle: hourly
+  ev_charging_daily:
+    source: sensor.rugvaenget13_session_total_charge
+    cycle: daily
+  ev_charging_weekly:
+    source: sensor.rugvaenget13_session_total_charge
+    cycle: weekly
+  ev_charging_monthly:
+    source: sensor.rugvaenget13_session_total_charge
+    cycle: monthly
+  ev_charging_yearly:
+    source: sensor.rugvaenget13_session_total_charge
+    cycle: yearly
+  ev_net_kwh_daily:
+    source: sensor.ev_charging_net_kwh_hourly_estimated
+    cycle: daily
+  ev_net_kwh_weekly:
+    source: sensor.ev_charging_net_kwh_hourly_estimated
+    cycle: weekly
+  ev_net_kwh_monthly:
+    source: sensor.ev_charging_net_kwh_hourly_estimated
+    cycle: monthly
+  ev_net_kwh_yearly:
+    source: sensor.ev_charging_net_kwh_hourly_estimated
+    cycle: yearly
