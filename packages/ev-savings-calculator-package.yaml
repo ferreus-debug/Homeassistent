@@ -1,0 +1,208 @@
+# ============================================================
+# Home Assistant - EV Savings Calculator (Denmark)
+# ============================================================
+# Compares what you would have paid driving your old
+# Opel Astra Sports Tourer (2016) on petrol vs. what you
+# actually pay charging your Polestar 3.
+#
+# EV charging costs come from real sensors that account
+# for solar self-consumption:
+#   - sensor.ev_charging_cost_weekly_net_only  (weekly, net grid)
+#   - sensor.ev_charging_monthly_cost          (monthly)
+#
+# Opel Astra K Sports Tourer 1.4 Turbo (150 HP) 2016
+#   NEDC combined: ~5.9 L/100 km  |  Real-world: ~7.2 L/100 km
+#
+# Polestar 3 Long Range Dual Motor (489 HP, 111 kWh battery)
+#   WLTP combined: 19.0 - 23.1 kWh/100 km  |  Real-world: ~21 kWh/100 km
+# ============================================================
+
+# 1. Danish petrol price (95 oktan)
+#
+# OPTION A  (recommended) - Install the Fuelprices_DK HACS integration:
+#   https://github.com/J-Lindvig/Fuelprices_DK
+#   It creates sensors for every company/fuel type, e.g.:
+#     sensor.ok_oktan_95
+#     sensor.shell_oktan_95
+#     sensor.circlek_oktan_95
+#   After installing, add this to configuration.yaml:
+#
+#   fuelprices_dk:
+#     companies:
+#       - ok
+#       - shell
+#       - circlek
+#     fueltypes:
+#       - oktan 95
+#
+#   Then the template below uses: states('sensor.ok_oktan_95')
+#
+# OPTION B - Use input_number.benzinpris_manuel and set the
+#   price yourself in the HA UI (no integration needed).
+
+input_number:
+  benzin_forbrug_per_100km:
+    name: "Opel Astra forbrug (L/100 km)"
+    min: 3
+    max: 20
+    step: 0.1
+    initial: 7.2
+    unit_of_measurement: "L/100 km"
+    icon: mdi:car
+
+  benzinpris_manuel:
+    name: "Benzinpris manuel (DKK/L)"
+    min: 8
+    max: 25
+    step: 0.01
+    initial: 13.50
+    unit_of_measurement: "DKK/L"
+    icon: mdi:gas-station
+
+template:
+  # Benzinpris unified sensor
+  - trigger:
+      - platform: time_pattern
+        minutes: "/30"
+    sensor:
+      - name: "Benzinpris DK"
+        unique_id: benzinpris_dk
+        unit_of_measurement: "DKK/L"
+        icon: mdi:gas-station
+        device_class: monetary
+        #availability: "{{ states('sensor.ok_oktan_95') is not none }}"
+        # Pick ONE state line and comment out the other
+        # OPTION A: Fuelprices_DK HACS integration
+        #state: "{{ states('sensor.ok_oktan_95') | float(0) }}"
+        # OPTION B: Manual input_number
+        state: "{{ states('input_number.benzinpris_manuel') | float(0) }}"
+
+  # Calculated sensors
+  - sensor:
+      # What the Opel Astra ST would have cost THIS WEEK
+      - name: "Benzinomkostning denne uge"
+        unique_id: benzinomkostning_denne_uge
+        unit_of_measurement: "DKK"
+        icon: mdi:gas-station
+        device_class: monetary
+        availability: >
+          {{ states('sensor.korsel_denne_uge') is not none and
+             states('input_number.benzin_forbrug_per_100km') is not none and
+             states('sensor.benzinpris_dk') is not none }}
+        state: >-
+          {% set km        = states('sensor.korsel_denne_uge') | float(0) %}
+          {% set l_per_100 = states('input_number.benzin_forbrug_per_100km') | float(7.2) %}
+          {% set pris      = states('sensor.benzinpris_dk') | float(0) %}
+          {{ (km / 100 * l_per_100 * pris) | round(2) }}
+
+      # What the Opel Astra ST would have cost THIS MONTH
+      - name: "Benzinomkostning denne maned"
+        unique_id: benzinomkostning_denne_maned
+        unit_of_measurement: "DKK"
+        icon: mdi:gas-station
+        device_class: monetary
+        availability: >
+          {{ states('sensor.korsel_denne_maned') is not none and
+             states('input_number.benzin_forbrug_per_100km') is not none and
+             states('sensor.benzinpris_dk') is not none }}
+        state: >-
+          {% set km        = states('sensor.korsel_denne_maned') | float(0) %}
+          {% set l_per_100 = states('input_number.benzin_forbrug_per_100km') | float(7.2) %}
+          {% set pris      = states('sensor.benzinpris_dk') | float(0) %}
+          {{ (km / 100 * l_per_100 * pris) | round(2) }}
+
+      # EV charging costs come from real sensors
+      # sensor.ev_charging_cost_weekly_net_only = grid cost after solar offset (weekly)
+      # sensor.ev_charging_cost_monthly_net_only = grid cost after solar offset (monthly)
+      # sensor.ev_charging_weekly_cost = total weekly cost (without solar offset)
+      # sensor.ev_charging_monthly_cost = total monthly cost (without solar offset)
+
+      # SAVINGS THIS WEEK (Polestar 3 vs Opel Astra)
+      - name: "EV-besparelse denne uge"
+        unique_id: ev_besparelse_denne_uge
+        unit_of_measurement: "DKK"
+        icon: mdi:piggy-bank-outline
+        device_class: monetary
+        availability: >
+          {{ states('sensor.benzinomkostning_denne_uge') is not none and
+             states('sensor.ev_charging_cost_weekly_net_only') is not none }}
+        state: >-
+          {% set benzin = states('sensor.benzinomkostning_denne_uge') | float(0) %}
+          {% set ev     = states('sensor.ev_charging_cost_weekly_net_only') | float(0) %}
+          {{ (benzin - ev) | round(2) }}
+
+      # SAVINGS THIS MONTH (Polestar 3 vs Opel Astra)
+      - name: "EV-besparelse denne maned"
+        unique_id: ev_besparelse_denne_maned
+        unit_of_measurement: "DKK"
+        icon: mdi:piggy-bank-outline
+        device_class: monetary
+        availability: >
+          {{ states('sensor.benzinomkostning_denne_maned') is not none and
+             states('sensor.ev_charging_cost_monthly_net_only') is not none }}
+        state: >-
+          {% set benzin = states('sensor.benzinomkostning_denne_maned') | float(0) %}
+          {% set ev     = states('sensor.ev_charging_cost_monthly_net_only') | float(0) %}
+          {{ (benzin - ev) | round(2) }}
+
+      # Total EV charging cost THIS WEEK (gross, without solar offset)
+      - name: "EV ladningomkostning denne uge"
+        unique_id: ev_ladningomkostning_denne_uge
+        unit_of_measurement: "DKK"
+        icon: mdi:ev-plug-type2
+        device_class: monetary
+        availability: >
+          {{ states('sensor.ev_charging_weekly_cost') is not none }}
+        state: >-
+          {{ states('sensor.ev_charging_weekly_cost') | float(0) | round(2) }}
+
+      # Total EV charging cost THIS MONTH (gross, without solar offset)
+      - name: "EV ladningomkostning denne maned"
+        unique_id: ev_ladningomkostning_denne_maned
+        unit_of_measurement: "DKK"
+        icon: mdi:ev-plug-type2
+        device_class: monetary
+        availability: >
+          {{ states('sensor.ev_charging_monthly_cost') is not none }}
+        state: >-
+          {{ states('sensor.ev_charging_monthly_cost') | float(0) | round(2) }}
+
+      # Opel Astra cost per km (for dashboard)
+      - name: "Opel Astra pris per km"
+        unique_id: opel_astra_pris_per_km
+        unit_of_measurement: "DKK/km"
+        icon: mdi:gas-station-outline
+        availability: >
+          {{ states('input_number.benzin_forbrug_per_100km') is not none and
+             states('sensor.benzinpris_dk') is not none }}
+        state: >-
+          {% set l_per_100 = states('input_number.benzin_forbrug_per_100km') | float(7.2) %}
+          {% set pris      = states('sensor.benzinpris_dk') | float(0) %}
+          {{ (l_per_100 / 100 * pris) | round(3) }}
+
+      # Polestar 3 actual cost per km (from real charging data)
+      - name: "Polestar 3 pris per km denne uge"
+        unique_id: polestar3_pris_per_km_uge
+        unit_of_measurement: "DKK/km"
+        icon: mdi:ev-plug-type2
+        availability: >
+          {{ states('sensor.korsel_denne_uge') is not none and
+             states('sensor.ev_charging_cost_weekly_net_only') is not none and
+             states('sensor.korsel_denne_uge') | float(0) > 0 }}
+        state: >-
+          {% set km = states('sensor.korsel_denne_uge') | float(0) %}
+          {% set ev = states('sensor.ev_charging_cost_weekly_net_only') | float(0) %}
+          {{ (ev / km) | round(3) if km > 0 else 0 }}
+
+      - name: "Polestar 3 pris per km denne maned"
+        unique_id: polestar3_pris_per_km_maned
+        unit_of_measurement: "DKK/km"
+        icon: mdi:ev-plug-type2
+        availability: >
+          {{ states('sensor.korsel_denne_maned') is not none and
+             states('sensor.ev_charging_cost_monthly_net_only') is not none and
+             states('sensor.korsel_denne_maned') | float(0) > 0 }}
+        state: >-
+          {% set km = states('sensor.korsel_denne_maned') | float(0) %}
+          {% set ev = states('sensor.ev_charging_cost_monthly_net_only') | float(0) %}
+          {{ (ev / km) | round(3) if km > 0 else 0 }}

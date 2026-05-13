@@ -1,0 +1,21 @@
+# ============================================================
+# Home Assistant Configuration - Add this to your main config
+# ============================================================
+
+# Include the EV Savings Calculator package
+homeassistant:
+  packages:
+    ev_savings_calculator: !include packages/ev-savings-calculator-package.yaml
+
+# ============================================================
+# OPTIONAL: For HACS Fuelprices_DK integration
+# ============================================================
+# If you want to use OPTION A (automatic fuel prices), uncomment:
+
+# fuelprices_dk:
+#   companies:
+#     - ok
+#     - shell
+#     - circlek
+#   fueltypes:
+#     - oktan 95

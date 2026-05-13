@@ -1,0 +1,36 @@
+# .gitignore for Home Assistant
+
+# Home Assistant
+*.db
+*.db-journal
+*.log
+.HA_VERSION
+tts/
+.storage/
+deps/
+OZW_Log.txt
+zwcfg_*.xml
+secrets.yaml
+known_devices.yaml
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db

@@ -1,0 +1,32 @@
+# Dashboard Entity Card for Home Assistant
+# Copy-paste this into your Home Assistant dashboard
+
+type: entities
+title: Polestar 3 vs Opel Astra besparelse
+entities:
+  - entity: sensor.benzinpris_dk
+    name: Benzinpris (95 oktan)
+  - entity: sensor.opel_astra_pris_per_km
+    name: Opel Astra kr/km
+  - entity: sensor.polestar_3_pris_per_km_denne_uge
+    name: Polestar 3 kr/km (uge)
+  - type: divider
+  - entity: sensor.benzinomkostning_denne_uge
+    name: Opel Astra ville have kostet (uge)
+  - entity: sensor.ev_charging_cost_weekly_net_only
+    name: Polestar 3 opladning (uge, efter solceller)
+  - entity: sensor.ev_ladningomkostning_denne_uge
+    name: Polestar 3 opladning (uge, total)
+  - entity: sensor.ev_besparelse_denne_uge
+    name: Besparelse denne uge
+    icon: mdi:piggy-bank
+  - type: divider
+  - entity: sensor.benzinomkostning_denne_maned
+    name: Opel Astra ville have kostet (måned)
+  - entity: sensor.ev_charging_monthly_cost
+    name: Polestar 3 opladning (måned, efter solceller)
+  - entity: sensor.ev_ladningomkostning_denne_maned
+    name: Polestar 3 opladning (måned, total)
+  - entity: sensor.ev_besparelse_denne_maned
+    name: Besparelse denne måned
+    icon: mdi:piggy-bank
