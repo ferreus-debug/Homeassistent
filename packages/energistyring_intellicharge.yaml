@@ -55,7 +55,7 @@ input_number:
     max: 5
     step: 0.05
     mode: box
-    initial: 2.0
+    initial: 1.4
 
   price_threshold_high:
     name: Expensive price threshold (DKK/kWh)
@@ -63,7 +63,7 @@ input_number:
     max: 5
     step: 0.05
     mode: box
-    initial: 2.5
+    initial: 1.9
 
   active_power_limit_w:
     name: Active Power Limit (W)
@@ -86,6 +86,11 @@ input_boolean:
     name: Allow EV charging from grid
     icon: mdi:ev-station
     initial: true
+
+  ev_force_charge:
+    name: EV force charge (trip mode)
+    icon: mdi:car-arrow-right
+    initial: false
 
   allow_export:
     name: Allow export during expensive hours
@@ -145,7 +150,7 @@ template:
       - name: energy_expensive_now
         state: >
           {% set price = state_attr('sensor.energi_data_service','current_price')|float(0) %}
-          {% set expensive = states('input_number.price_threshold_high')|float(2.5) %}
+          {% set expensive = states('input_number.price_threshold_high')|float(1.9) %}
           {{ price > expensive }}
 
       # EV allowed time window: 00-05 and 09-17
@@ -495,6 +500,7 @@ automation:
           - binary_sensor.energy_cheap_now
           - binary_sensor.pv_excess_soon
           - input_boolean.ev_allow_grid
+          - input_boolean.ev_force_charge
           - input_number.ev_daily_need_kwh
           - utility_meter.ev_energy_today
           - sensor.polestar_0796_battery_charge_level
@@ -507,6 +513,7 @@ automation:
           cheap_now: "{{ is_state('binary_sensor.energy_cheap_now','on') }}"
           sun_soon: "{{ is_state('binary_sensor.pv_excess_soon','on') }}"
           allow_grid: "{{ is_state('input_boolean.ev_allow_grid','on') }}"
+          force_charge: "{{ is_state('input_boolean.ev_force_charge','on') }}"
           need_kwh: "{{ states('input_number.ev_daily_need_kwh')|float(0) }}"
           done_kwh: >
             {% set v = states('utility_meter.ev_energy_today') %}
@@ -515,13 +522,17 @@ automation:
           allowed_time: "{{ is_state('binary_sensor.ev_allowed_time','on') }}"
           car_soc: "{{ states('sensor.polestar_0796_battery_charge_level')|float(0) }}"
       - choose:
+          - conditions: "{{ force_charge }}"
+            sequence:
+              - service: script.ev_resume
           - conditions: >
               {{ need_left > 0 and allowed_time and car_soc < 50
                  and (sun_soon or (allow_grid and cheap_now)) }}
             sequence:
               - service: script.ev_resume
           - conditions: >
-              {{ (not allowed_time) or (car_soc >= 50) or need_left <= 0.1 }}
+              {{ not force_charge
+                 and ((not allowed_time) or (car_soc >= 50) or need_left <= 0.1) }}
             sequence:
               - service: script.ev_pause
 
@@ -534,8 +545,10 @@ automation:
         entity_id: input_boolean.huawei_force_control
         to: "on"
       - platform: state
+        entity_id: sensor.batteries_state_of_capacity
+        for: "00:02:00"
+      - platform: state
         entity_id:
-          - sensor.batteries_state_of_capacity
           - binary_sensor.energy_cheap_now
           - binary_sensor.energy_expensive_now
           - binary_sensor.pv_excess_soon
@@ -618,9 +631,10 @@ automation:
               - service: script.huawei_force_discharge_to_soc
               - service: script.set_battery_working_mode
                 data: { power: 100 }
-
-      - service: script.set_battery_working_mode
-        data: { power: 0 }
+        default:
+          - service: script.huawei_stop_forced
+          - service: script.set_battery_working_mode
+            data: { power: 0 }
 
   # Force EV charging when big PV remaining; after 3 failures, limit export to 0 W
   - id: ev_force_charge_when_big_remaining_pv

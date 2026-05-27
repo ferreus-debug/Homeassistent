@@ -20,68 +20,6 @@ panel_custom:
     sidebar_icon: mdi:material-design
     module_url: /hacsfiles/material-you-utilities/material-you-utilities.min.js
 
-influxdb:
-  api_version: 2
-  host: 192.168.68.53
-  port: 8086
-  ssl: false
-  verify_ssl: false
-  organization: home
-  bucket: homeassistant
-  token: !secret influx_token
-  default_measurement: state
-  include:
-    domains:
-      - sensor
-    entity_globs:
-      - sensor.ev_*
-      - sensor.p1meterimport_*
-    entities:
-      # Pris
-      - sensor.energi_data_service
-
-      # Polestar SoC
-      - sensor.polestar_0796_battery_charge_level
-
-      # Grid import/export timetal
-      - sensor.grid_import_hourly
-      - sensor.grid_export_hourly
-
-      # EV opladning cost
-      - sensor.ev_charging_cost_per_hour
-      - sensor.ev_charging_daily_cost
-      - sensor.ev_charging_weekly_cost
-      - sensor.ev_charging_monthly_cost
-      - sensor.ev_charging_yearly_cost
-      - sensor.ev_charging_cost_hourly_net_only
-      - sensor.ev_charging_cost_daily_net_only
-      - sensor.ev_charging_cost_weekly_net_only
-      - sensor.ev_charging_cost_monthly_net_only
-      - sensor.ev_charging_cost_yearly_net_only
-
-      - sensor.inverter_weekly_yield
-
-      - sensor.p1_meter_power
-
-      - sensor.power_meter_consumption_energy_daily
-
-      - sensor.batteries_state_of_capacity
-      - sensor.rugvaenget13_energy_meter
-      - utility_meter.ev_energy_today
-
-      # Afledt grid import kW (fra vores automations-pakke)
-      - sensor.grid_import_kw
-
-      # EV Savings Calculator sensors
-      - sensor.benzinpris_dk
-      - sensor.benzinomkostning_denne_uge
-      - sensor.benzinomkostning_denne_maned
-      - sensor.ev_besparelse_denne_uge
-      - sensor.ev_besparelse_denne_maned
-      - sensor.opel_astra_pris_per_km
-      - sensor.polestar3_pris_per_km_uge
-      - sensor.polestar3_pris_per_km_maned
-
 homeassistant:
   external_url: "https://homeassistent.mathiasspangsberg.com"
   internal_url: "http://homeassistant.local:8123"
@@ -279,10 +217,6 @@ input_number:
     icon: mdi:weather-sunny
 
 sensor:
-  - platform: worxlandroid
-    host: 192.168.68.59
-    pin: 2312
-
   - platform: template
     sensors:
       billigste_5_timer:
@@ -299,6 +233,16 @@ sensor:
     command: "python3 /config/scripts/todoist_latest_tasks.py"
     scan_interval: 3600
     value_template: "{{ value }}"
+
+  - platform: integration
+    source: sensor.ev_charging_cost_rate
+    name: "EV charging cost total"
+    unique_id: ev_charging_cost_total
+    unit_time: h
+    method: left
+    max_sub_interval:
+      minutes: 1
+    round: 4
 
 template:
   - sensor:
@@ -409,15 +353,23 @@ template:
       - name: "Zaptec Total Charge Power"
         unique_id: zaptec_total_charge_power
         state: >
-          {% set v = state_attr('sensor.rugvaenget13_charger','total_charge_power') %}
-          {% if v is number %}{{ v|float }}
-          {% elif v is string %}{{ v|float(0) }}
-          {% else %}unknown{% endif %}
+          {{ (states('sensor.rugvaenget13_charge_power') | float(0) / 1000) | round(3) }}
         unit_of_measurement: "kW"
         device_class: power
         state_class: measurement
         availability: >
-          {{ state_attr('sensor.rugvaenget13_charger','total_charge_power') is not none }}
+          {{ states('sensor.rugvaenget13_charge_power') not in ['unknown', 'unavailable', 'none', ''] }}
+
+      - name: "EV charging cost rate"
+        unique_id: ev_charging_cost_rate
+        unit_of_measurement: "DKK/h"
+        state_class: measurement
+        availability: >
+          {{ states('sensor.energi_data_service') | is_number }}
+        state: >
+          {% set kw = states('sensor.zaptec_total_charge_power') | float(0) %}
+          {% set price = states('sensor.energi_data_service') | float(0) %}
+          {{ (kw * price) | round(4) }}
 
       - name: "EV charging net kWh hourly (estimated)"
         unit_of_measurement: "kWh"
@@ -443,31 +395,31 @@ template:
 
       - name: "EV charging daily cost"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_cost_daily') | is_number }}
         state: >
-          {% set kwh = states('sensor.ev_charging_daily') | float(0) %}
-          {% set price = states('sensor.energi_data_service') | float(0) %}
-          {{ (kwh * price) | round(2) }}
+          {{ states('sensor.ev_charging_cost_daily') | float(0) | round(2) }}
 
       - name: "EV charging weekly cost"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_cost_weekly') | is_number }}
         state: >
-          {% set kwh = states('sensor.ev_charging_weekly') | float(0) %}
-          {% set price = states('sensor.energi_data_service') | float(0) %}
-          {{ (kwh * price) | round(2) }}
+          {{ states('sensor.ev_charging_cost_weekly') | float(0) | round(2) }}
 
       - name: "EV charging monthly cost"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_cost_monthly') | is_number }}
         state: >
-          {% set kwh = states('sensor.ev_charging_monthly') | float(0) %}
-          {% set price = states('sensor.energi_data_service') | float(0) %}
-          {{ (kwh * price) | round(2) }}
+          {{ states('sensor.ev_charging_cost_monthly') | float(0) | round(2) }}
 
       - name: "EV charging yearly cost"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_cost_yearly') | is_number }}
         state: >
-          {% set kwh = states('sensor.ev_charging_yearly') | float(0) %}
-          {% set price = states('sensor.energi_data_service') | float(0) %}
-          {{ (kwh * price) | round(2) }}
+          {{ states('sensor.ev_charging_cost_yearly') | float(0) | round(2) }}
 
       - name: "Polestar Odometer Filtered"
         unit_of_measurement: "km"
@@ -484,18 +436,24 @@ template:
 
       - name: "EV netonly weekly - bilopladning (debug)"
         unit_of_measurement: "kWh"
+        availability: "{{ states('sensor.ev_charging_weekly') | is_number }}"
         state: "{{ states('sensor.ev_charging_weekly') }}"
 
       - name: "EV netonly weekly - net_import (debug)"
         unit_of_measurement: "kWh"
+        availability: "{{ states('sensor.p1meterimport_weekly') | is_number }}"
         state: "{{ states('sensor.p1meterimport_weekly') }}"
 
       - name: "EV netonly weekly - solar (debug)"
         unit_of_measurement: "kWh"
+        availability: "{{ states('sensor.inverter_weekly_yield') | is_number }}"
         state: "{{ states('sensor.inverter_weekly_yield') }}"
 
       - name: "EV charging cost hourly (net only)"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_hourly') | is_number and
+             states('sensor.energi_data_service') | is_number }}
         state: >
           {% set bilopladning = states('sensor.ev_charging_hourly') | float(0) %}
           {% set net_import = states('sensor.p1meterimport_hourly') | float(0) %}
@@ -507,48 +465,51 @@ template:
 
       - name: "EV charging cost daily (net only)"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_cost_daily') | is_number }}
         state: >
-          {% set bilopladning = states('sensor.ev_charging_daily') | float(0) %}
+          {% set cost = states('sensor.ev_charging_cost_daily') | float(0) %}
           {% set net_import = states('sensor.p1meterimport_daily') | float(0) %}
           {% set frasolar = states('sensor.inverter_daily_yield') | float(0) %}
-          {% set pris_pr_kwh = states('sensor.energi_data_service') | float(0) %}
-          {% set estimeret_nettokwh = [bilopladning - frasolar, 0] | max %}
-          {% set estimeret_nettokwh = [estimeret_nettokwh, net_import, bilopladning] | min %}
-          {{ (estimeret_nettokwh * pris_pr_kwh) | round(2) }}
+          {% set supply = net_import + frasolar %}
+          {% set net_share = (net_import / supply) if supply > 0 else 1 %}
+          {{ (cost * net_share) | round(2) }}
 
       - name: "EV charging cost weekly (net only)"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_cost_weekly') | is_number }}
         state: >
-          {% set ev = states('sensor.ev_charging_weekly') | float(0) %}
+          {% set cost = states('sensor.ev_charging_cost_weekly') | float(0) %}
           {% set imp = states('sensor.p1meterimport_weekly') | float(0) %}
           {% set sol = states('sensor.inverter_weekly_yield') | float(0) %}
-          {% set pris = states('sensor.energi_data_service') | float(0) %}
           {% set supply = imp + sol %}
           {% set net_share = (imp / supply) if supply > 0 else 1 %}
-          {% set ev_net = ev * net_share %}
-          {{ (ev_net * pris) | round(2) }}
+          {{ (cost * net_share) | round(2) }}
 
       - name: "EV charging cost monthly (net only)"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_cost_monthly') | is_number }}
         state: >
-          {% set bilopladning = states('sensor.ev_charging_monthly') | float(0) %}
+          {% set cost = states('sensor.ev_charging_cost_monthly') | float(0) %}
           {% set net_import = states('sensor.p1meterimport_monthly') | float(0) %}
           {% set frasolar = states('sensor.inverter_monthly_yield') | float(0) %}
-          {% set pris_pr_kwh = states('sensor.energi_data_service') | float(0) %}
-          {% set estimeret_nettokwh = [bilopladning - frasolar, 0] | max %}
-          {% set estimeret_nettokwh = [estimeret_nettokwh, net_import, bilopladning] | min %}
-          {{ (estimeret_nettokwh * pris_pr_kwh) | round(2) }}
+          {% set supply = net_import + frasolar %}
+          {% set net_share = (net_import / supply) if supply > 0 else 1 %}
+          {{ (cost * net_share) | round(2) }}
 
       - name: "EV charging cost yearly (net only)"
         unit_of_measurement: "DKK"
+        availability: >
+          {{ states('sensor.ev_charging_cost_yearly') | is_number }}
         state: >
-          {% set bilopladning = states('sensor.ev_charging_yearly') | float(0) %}
+          {% set cost = states('sensor.ev_charging_cost_yearly') | float(0) %}
           {% set net_import = states('sensor.p1meterimport_yearly') | float(0) %}
           {% set frasolar = states('sensor.inverter_yearly_yield') | float(0) %}
-          {% set pris_pr_kwh = states('sensor.energi_data_service') | float(0) %}
-          {% set estimeret_nettokwh = [bilopladning - frasolar, 0] | max %}
-          {% set estimeret_nettokwh = [estimeret_nettokwh, net_import, bilopladning] | min %}
-          {{ (estimeret_nettokwh * pris_pr_kwh) | round(2) }}
+          {% set supply = net_import + frasolar %}
+          {% set net_share = (net_import / supply) if supply > 0 else 1 %}
+          {{ (cost * net_share) | round(2) }}
 
   - binary_sensor:
       - name: "Should charge car at night"
@@ -670,6 +631,18 @@ rest_command:
       }
 
 utility_meter:
+  ev_charging_cost_daily:
+    source: sensor.ev_charging_cost_total
+    cycle: daily
+  ev_charging_cost_weekly:
+    source: sensor.ev_charging_cost_total
+    cycle: weekly
+  ev_charging_cost_monthly:
+    source: sensor.ev_charging_cost_total
+    cycle: monthly
+  ev_charging_cost_yearly:
+    source: sensor.ev_charging_cost_total
+    cycle: yearly
   ev_charging_hourly:
     source: sensor.rugvaenget13_session_total_charge
     cycle: hourly
@@ -697,3 +670,4 @@ utility_meter:
   ev_net_kwh_yearly:
     source: sensor.ev_charging_net_kwh_hourly_estimated
     cycle: yearly
+
